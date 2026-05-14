@@ -3,7 +3,7 @@ import { GripHorizontal } from 'lucide-react'
 import { cn } from '../../../lib/utils'
 import { useLayoutDnd } from './LayoutDndContext'
 import { useStore } from '../../../store/root.store'
-import { makeNotesLeaf, findNotesLeafIdForNote, makeFileEditorLeaf } from '../layout-tree'
+import { makeNotesLeaf, findNotesLeafIdForNote, makeFileEditorLeaf, findLeafById } from '../layout-tree'
 import type { DropSide } from './LayoutDndContext'
 
 interface Props {
@@ -39,6 +39,7 @@ export function PaneDropTarget({ leafId, tabId, children }: Props): JSX.Element 
   const moveLayout = useStore((s) => s.moveLayout)
   const insertSessionIntoLayout = useStore((s) => s.insertSessionIntoLayout)
   const insertLayout = useStore((s) => s.insertLayout)
+  const removeLayoutLeaf = useStore((s) => s.removeLayoutLeaf)
   const paneTree = useStore((s) => s.paneTree)
 
   const isDragging = dragState !== null
@@ -89,7 +90,19 @@ export function PaneDropTarget({ leafId, tabId, children }: Props): JSX.Element 
     } else if (!activeZone) {
       endDrag(); return
     } else if (dragState.type === 'layout-leaf') {
-      if (dragState.tabId === tabId) moveLayout(tabId, dragState.leafId, leafId, direction, side)
+      if (dragState.tabId === tabId) {
+        moveLayout(tabId, dragState.leafId, leafId, direction, side)
+      } else {
+        // Cross-tab: pull the leaf out of its source tab and place it here
+        const srcTree = paneTree[dragState.tabId]
+        if (srcTree) {
+          const srcLeaf = findLeafById(srcTree, dragState.leafId)
+          if (srcLeaf) {
+            insertLayout(tabId, leafId, direction, srcLeaf, side)
+            removeLayoutLeaf(dragState.tabId, dragState.leafId)
+          }
+        }
+      }
     } else if (dragState.type === 'sidebar-session') {
       insertSessionIntoLayout(tabId, leafId, dragState.sessionId, direction, side)
     } else if (dragState.type === 'sidebar-notes') {

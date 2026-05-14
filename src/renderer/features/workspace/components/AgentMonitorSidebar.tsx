@@ -228,18 +228,33 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
     return activeSessionId
   }, [activeSessionId, focusedSessionId, paneTree])
 
+  // Scan every session belonging to this workspace (plus __root__) so open files
+  // stay visible in the sidebar regardless of which session is currently focused,
+  // and survive switching away and back to this workspace.
   const openFiles = useMemo(() => {
-    if (!activeSessionId) return []
-    const tree = paneTree[activeSessionId]
-    return tree ? collectFileEditorLeaves(tree) : []
-  }, [activeSessionId, paneTree])
+    const result: Array<{ leafId: string; filePath: string; tabId: string }> = []
+    const seen = new Set<string>()
+    const tabsToScan = new Set<string>(projectSessions.map((s) => s.sessionId))
+    if (activeSessionId) tabsToScan.add(activeSessionId)
+    for (const tabId of tabsToScan) {
+      const tree = paneTree[tabId]
+      if (!tree) continue
+      for (const { leafId, filePath } of collectFileEditorLeaves(tree)) {
+        if (!seen.has(leafId)) {
+          seen.add(leafId)
+          result.push({ leafId, filePath, tabId })
+        }
+      }
+    }
+    return result
+  }, [projectSessions, activeSessionId, paneTree])
 
   const openFilesSection = openFiles.length === 0 ? null : (
     <div className="flex-shrink-0 border-t border-brand-panel/40 py-1">
       <div className="px-3 py-1 text-[10px] text-zinc-600 uppercase tracking-wider font-semibold select-none">
         Open Files
       </div>
-      {openFiles.map(({ leafId, filePath }) => {
+      {openFiles.map(({ leafId, filePath, tabId: fileTabId }) => {
         const name = filePath.replace(/\\/g, '/').split('/').pop() ?? filePath
         const ext = name.includes('.') ? name.split('.').pop()?.toLowerCase() ?? '' : ''
         const stem = ext ? name.slice(0, name.length - ext.length - 1) : name
@@ -254,11 +269,14 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
               }
               e.dataTransfer.setDragImage(ghostRef.current, 0, 0)
               e.dataTransfer.effectAllowed = 'move'
-              e.dataTransfer.setData('text/plain', filePath)
-              startDrag({ type: 'file-path', filePath })
+              startDrag({ type: 'layout-leaf', leafId, tabId: fileTabId })
             }}
             onDragEnd={() => endDrag()}
-            onClick={() => setFocusedLeaf(leafId)}
+            onClick={() => {
+              // Switch to the session that owns this file pane if not already there
+              if (fileTabId !== activeSessionId) onSelectSession(fileTabId)
+              setFocusedLeaf(leafId)
+            }}
             className={cn(
               'flex items-center gap-1.5 px-2 py-1.5 mx-1 rounded select-none group transition-colors cursor-grab active:cursor-grabbing',
               isActive
@@ -272,7 +290,7 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
               {ext && <span className={isActive ? 'text-zinc-500' : 'text-zinc-700'}>.{ext}</span>}
             </span>
             <button
-              onClick={(e) => { e.stopPropagation(); if (activeSessionId) removeLayoutLeaf(activeSessionId, leafId) }}
+              onClick={(e) => { e.stopPropagation(); removeLayoutLeaf(fileTabId, leafId) }}
               className="flex-shrink-0 opacity-0 group-hover:opacity-100 p-0.5 rounded text-zinc-600 hover:text-zinc-300 transition-colors"
             >
               <X size={10} />
