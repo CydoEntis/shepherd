@@ -229,7 +229,7 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
   }, [activeSessionId, focusedSessionId, paneTree])
 
   const openFiles = useMemo(() => {
-    if (!activeSessionId || activeSessionId === '__root__') return []
+    if (!activeSessionId) return []
     const tree = paneTree[activeSessionId]
     return tree ? collectFileEditorLeaves(tree) : []
   }, [activeSessionId, paneTree])
