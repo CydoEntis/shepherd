@@ -254,7 +254,8 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
               }
               e.dataTransfer.setDragImage(ghostRef.current, 0, 0)
               e.dataTransfer.effectAllowed = 'move'
-              if (activeSessionId) startDrag({ type: 'layout-leaf', leafId, tabId: activeSessionId })
+              e.dataTransfer.setData('text/plain', filePath)
+              startDrag({ type: 'file-path', filePath })
             }}
             onDragEnd={() => endDrag()}
             onClick={() => setFocusedLeaf(leafId)}

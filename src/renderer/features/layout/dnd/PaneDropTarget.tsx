@@ -3,7 +3,7 @@ import { GripHorizontal } from 'lucide-react'
 import { cn } from '../../../lib/utils'
 import { useLayoutDnd } from './LayoutDndContext'
 import { useStore } from '../../../store/root.store'
-import { makeNotesLeaf, findNotesLeafIdForNote, makeFileEditorLeaf, findLeafById } from '../layout-tree'
+import { makeNotesLeaf, findNotesLeafIdForNote, makeFileEditorLeaf } from '../layout-tree'
 import type { DropSide } from './LayoutDndContext'
 
 interface Props {
@@ -80,17 +80,11 @@ export function PaneDropTarget({ leafId, tabId, children }: Props): JSX.Element 
     const side = (activeZone === 'right' || activeZone === 'bottom') ? 'after' : 'before'
 
     if (dragState.type === 'file-path') {
-      // Never insert file editors into '__root__' — that corrupts workspace navigation
+      // Never insert file editors into '__root__' — that corrupts workspace navigation.
+      // Dragging always creates a split at the drop edge; clicking in the file tree
+      // handles switching the file shown in an existing pane.
       if (tabId !== '__root__') {
-        const targetLeaf = tree ? findLeafById(tree, leafId) : null
-        if (targetLeaf?.type === 'leaf' && targetLeaf.panel === 'file-editor') {
-          document.dispatchEvent(new CustomEvent('acc:open-file-in-pane', {
-            detail: { leafId, filePath: dragState.filePath }
-          }))
-        } else {
-          const fileSide = (activeZone === 'right' || activeZone === 'bottom') ? 'after' : 'before'
-          insertLayout(tabId, leafId, direction, makeFileEditorLeaf(dragState.filePath), fileSide)
-        }
+        insertLayout(tabId, leafId, direction, makeFileEditorLeaf(dragState.filePath), side)
       }
     } else if (!activeZone) {
       endDrag(); return
