@@ -149,6 +149,11 @@ export function registerFsIpc(): void {
     await fs.writeFile(filePath, content, 'utf-8')
   })
 
+  ipcMain.handle(IPC.FS_COPY_FILE, async (_, { srcPath, destPath }: { srcPath: string; destPath: string }): Promise<void> => {
+    await fs.mkdir(dirname(destPath), { recursive: true })
+    await fs.copyFile(srcPath, destPath)
+  })
+
   ipcMain.handle(IPC.SHELL_OPEN_EXTERNAL, (_event, { url }: { url: string }) => {
     return shell.openExternal(url)
   })

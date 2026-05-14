@@ -121,6 +121,7 @@ export const IPC = {
   // Filesystem write: renderer → main (invoke)
   FS_MKDIR: 'fs:mkdir',
   FS_WRITE_FILE: 'fs:write-file',
+  FS_COPY_FILE: 'fs:copy-file',
 
   // Shell: renderer → main (invoke)
   SHELL_OPEN_EXTERNAL: 'shell:open-external',
@@ -129,7 +130,17 @@ export const IPC = {
   CLIPBOARD_READ_TEXT: 'clipboard:read-text',
 
   // Sbx: renderer → main (invoke)
-  SBX_AVAILABLE: 'sbx:available'
+  SBX_AVAILABLE: 'sbx:available',
+
+  // Workspace: renderer → main (invoke)
+  WORKSPACE_LIST: 'workspace:list',
+  WORKSPACE_CREATE: 'workspace:create',
+  WORKSPACE_UPDATE: 'workspace:update',
+  WORKSPACE_DELETE: 'workspace:delete',
+
+  // UI State: renderer → main (invoke)
+  UI_STATE_GET: 'ui-state:get',
+  UI_STATE_SET: 'ui-state:set',
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]

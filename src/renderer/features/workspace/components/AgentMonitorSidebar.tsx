@@ -1,35 +1,35 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
-import { Plus, ChevronDown, ChevronRight, FolderOpen, X, Users, Columns2 } from 'lucide-react'
+import { Plus, ChevronDown, ChevronRight, FolderOpen, FolderTree, X, Users } from 'lucide-react'
 import { useStore } from '../../../store/root.store'
-import { useLayoutDnd } from '../../layout/dnd/LayoutDndContext'
-import { useProjects } from '../../session/hooks/useProjects'
 import { patchSession, killSession } from '../../session/session.service'
 import { EditSessionModal } from '../../session/components/EditSessionModal'
 import { EditGroupModal } from '../../session/components/EditGroupModal'
 import { removeWorktree } from '../../fs/fs.service'
+import { createWorkspace, deleteWorkspace } from '../workspace.service'
 import { detachTab, reattachTab, moveToWindow } from '../../window/window.service'
-import { findTabForSession, collectSessionIds, findNotesLeafId, makeNotesLeaf } from '../../layout/layout-tree'
+import { NewWorkspaceModal } from './NewWorkspaceModal'
+import { shortPath } from '../../../lib/utils'
+import { findTabForSession, collectSessionIds, makeFileEditorLeaf } from '../../layout/layout-tree'
 import { useWorktreeStats } from '../hooks/useWorktreeStats'
 import { useConfirmClose } from '../../session/hooks/useConfirmClose'
-import { FileTree } from '../../notes/components/FileTree'
 import { toast } from 'sonner'
-import { cn, normalizePath, shortPath } from '../../../lib/utils'
+import { cn, normalizePath } from '../../../lib/utils'
 import { Skeleton } from '../../../components/ui/skeleton'
 import { SessionRow } from './SessionRow'
 import { SessionCtxMenu } from './SessionCtxMenu'
 import { GroupCtxMenu } from './GroupCtxMenu'
 import { NewGroupModal } from './NewGroupModal'
-import { ConfirmCloseProjectModal } from './ConfirmCloseProjectModal'
 import type { SessionMeta } from '@shared/ipc-types'
+import { ROOT_WORKSPACE_ID } from '@shared/ipc-types'
 
 interface Props {
-  activeProject: string | null
-  onProjectChange: (path: string | null) => void
+  activeWorkspaceId: string
+  onWorkspaceChange: (id: string) => void
   activeSessionId: string | null
   onSelectSession: (id: string | null) => void
 }
 
-export function AgentMonitorSidebar({ activeProject, onProjectChange, activeSessionId, onSelectSession }: Props): JSX.Element {
+export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, activeSessionId, onSelectSession }: Props): JSX.Element {
   const sessions = useStore((s) => s.sessions)
   const tabOrder = useStore((s) => s.tabOrder)
   const isRestoringLayout = useStore((s) => s.isRestoringLayout)
@@ -46,13 +46,14 @@ export function AgentMonitorSidebar({ activeProject, onProjectChange, activeSess
   const insertLayoutAtRight = useStore((s) => s.insertLayoutAtRight)
   const sessionGroups = useStore((s) => s.settings.sessionGroups)
   const updateSettings = useStore((s) => s.updateSettings)
+  const workspaces = useStore((s) => s.workspaces)
+  const addWorkspace = useStore((s) => s.addWorkspace)
+  const removeWorkspaceFromStore = useStore((s) => s.removeWorkspaceFromStore)
 
-  const { startDrag, endDrag } = useLayoutDnd()
-  const { openProjects, addProject, removeProject } = useProjects()
   const { requestClose, modal: closeModal } = useConfirmClose()
 
-  const [dropdownOpen, setDropdownOpen] = useState(false)
-  const [confirmCloseProject, setConfirmCloseProject] = useState(false)
+  const [wsOpen, setWsOpen] = useState(false)
+  const [showNewWsModal, setShowNewWsModal] = useState(false)
   const [showNewGroupModal, setShowNewGroupModal] = useState(false)
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; meta: SessionMeta } | null>(null)
   const [editMeta, setEditMeta] = useState<SessionMeta | null>(null)
@@ -61,15 +62,12 @@ export function AgentMonitorSidebar({ activeProject, onProjectChange, activeSess
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   const [draggedSessionId, setDraggedSessionId] = useState<string | null>(null)
   const [dragOverGroupId, setDragOverGroupId] = useState<string | null | 'ungrouped'>('ungrouped')
-  const [sessionsOpen, setSessionsOpen] = useState(true)
-  const [notesOpen, setNotesOpen] = useState(false)
-  const [splitPercent, setSplitPercent] = useState(50)
-  const [sidebarActiveNoteId, setSidebarActiveNoteId] = useState<string | null>(null)
-  const dropdownRef = useRef<HTMLDivElement>(null)
+  const [isDragOver, setIsDragOver] = useState(false)
   const sidebarBodyRef = useRef<HTMLDivElement>(null)
 
-  const isNoWorkspace = activeProject === null
-  const normalizedActive = activeProject ? normalizePath(activeProject) : undefined
+  const isRootWorkspace = activeWorkspaceId === ROOT_WORKSPACE_ID
+  const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) ?? null
+  const normalizedActive = activeWorkspace?.rootPath ? normalizePath(activeWorkspace.rootPath) : undefined
 
   const currentWindowSessionIds = useMemo(() => {
     const ids = new Set<string>()
@@ -84,19 +82,20 @@ export function AgentMonitorSidebar({ activeProject, onProjectChange, activeSess
     Object.values(sessions)
       .filter((m) => {
         if (!currentWindowSessionIds.has(m.sessionId)) return false
-        if (isNoWorkspace) return !m.worktreePath
+        if (isRootWorkspace) return true
+        if (m.workspaceId) return m.workspaceId === activeWorkspaceId
         if (!normalizedActive) return false
         const root = normalizePath(m.projectRoot ?? m.cwd)
-        return (root === normalizedActive || root.startsWith(normalizedActive + '/')) && !!m.worktreePath
+        return root === normalizedActive || root.startsWith(normalizedActive + '/')
       })
       .sort((a, b) => b.createdAt - a.createdAt),
-    [sessions, currentWindowSessionIds, isNoWorkspace, normalizedActive]
+    [sessions, currentWindowSessionIds, isRootWorkspace, activeWorkspaceId, normalizedActive]
   )
 
-  const worktreeStats = useWorktreeStats(isNoWorkspace ? [] : projectSessions)
+  const worktreeStats = useWorktreeStats(isRootWorkspace ? [] : projectSessions)
 
   const grouped = useMemo(() => {
-    if (!isNoWorkspace) return null
+    if (!isRootWorkspace) return null
     const byGroup: Record<string, SessionMeta[]> = {}
     const ungrouped: SessionMeta[] = []
     for (const s of projectSessions) {
@@ -104,87 +103,20 @@ export function AgentMonitorSidebar({ activeProject, onProjectChange, activeSess
       else ungrouped.push(s)
     }
     return { byGroup, ungrouped }
-  }, [isNoWorkspace, projectSessions])
+  }, [isRootWorkspace, projectSessions])
 
   useEffect(() => {
     setShowNewGroupModal(false)
-  }, [normalizedActive, isNoWorkspace])
+  }, [activeWorkspaceId])
 
   useEffect(() => {
-    if (!isNoWorkspace && projectSessions.length > 0 && (!activeSessionId || activeSessionId === '__root__')) {
-      onSelectSession(projectSessions[0].sessionId)
+    if (!isRootWorkspace && projectSessions.length > 0 && (!activeSessionId || activeSessionId === '__root__')) {
+      const { paneTree } = useStore.getState()
+      const tabId = findTabForSession(paneTree, projectSessions[0].sessionId)
+      if (tabId) onSelectSession(tabId)
     }
-  }, [projectSessions.length, activeSessionId, isNoWorkspace, onSelectSession])
+  }, [projectSessions.length, activeSessionId, isRootWorkspace, onSelectSession])
 
-  useEffect(() => {
-    setSidebarActiveNoteId(null)
-    const handler = (e: Event): void => {
-      const { noteId, tabId } = (e as CustomEvent<{ noteId: string; tabId: string }>).detail
-      if (tabId === activeSessionId) setSidebarActiveNoteId(noteId)
-    }
-    document.addEventListener('acc:note-active-changed', handler)
-    return () => document.removeEventListener('acc:note-active-changed', handler)
-  }, [activeSessionId])
-
-  const handleResizeMouseDown = useCallback((e: React.MouseEvent): void => {
-    e.preventDefault()
-    const body = sidebarBodyRef.current
-    if (!body) return
-    const bodyRect = body.getBoundingClientRect()
-    const onMove = (ev: MouseEvent): void => {
-      const relY = ev.clientY - bodyRect.top
-      setSplitPercent(Math.min(80, Math.max(20, (relY / bodyRect.height) * 100)))
-    }
-    const onUp = (): void => {
-      document.removeEventListener('mousemove', onMove)
-      document.removeEventListener('mouseup', onUp)
-    }
-    document.addEventListener('mousemove', onMove)
-    document.addEventListener('mouseup', onUp)
-  }, [])
-
-  const handleSidebarNoteActivate = useCallback((noteId: string): void => {
-    const s = useStore.getState()
-    // activeSessionId may be a secondary session inside a split pane tab.
-    // findTabForSession traverses all pane trees to find the correct tab key.
-    const tabId = (activeSessionId ? findTabForSession(s.paneTree, activeSessionId) : null) ?? '__root__'
-    const tree = s.paneTree[tabId]
-    if (!tree) return
-
-    if (tree.type === 'leaf' && tree.panel === 'home') {
-      const newLeaf = makeNotesLeaf(noteId)
-      s.replaceLayoutLeaf(tabId, tree.id, newLeaf)
-      setTimeout(() => {
-        document.dispatchEvent(new CustomEvent('acc:activate-note', { detail: { noteId, tabId, leafId: newLeaf.id } }))
-      }, 50)
-      return
-    }
-
-    // Use findNotesLeafId (any notes pane) to avoid inserting a duplicate when
-    // a notes pane already exists but was opened without a specific noteId.
-    const existingLeafId = findNotesLeafId(tree)
-    if (existingLeafId) {
-      document.dispatchEvent(new CustomEvent('acc:activate-note', { detail: { noteId, tabId, leafId: existingLeafId } }))
-      return
-    }
-
-    const newLeaf = makeNotesLeaf(noteId)
-    insertLayoutAtRight(tabId, newLeaf)
-    setTimeout(() => {
-      document.dispatchEvent(new CustomEvent('acc:activate-note', { detail: { noteId, tabId, leafId: newLeaf.id } }))
-    }, 50)
-  }, [activeSessionId, insertLayoutAtRight])
-
-  const handleNewNote = useCallback((): void => {
-    if (activeSessionId) {
-      const state = useStore.getState()
-      const tree = state.paneTree[activeSessionId]
-      if (tree && !findNotesLeafId(tree)) state.toggleNotesPane(activeSessionId)
-    }
-    setTimeout(() => {
-      document.dispatchEvent(new CustomEvent('acc:new-note'))
-    }, 50)
-  }, [activeSessionId])
 
   const handleDrop = useCallback(async (targetGroupId: string | null) => {
     if (!draggedSessionId) return
@@ -206,16 +138,17 @@ export function AgentMonitorSidebar({ activeProject, onProjectChange, activeSess
         const remaining = Object.values(useStore.getState().sessions)
           .filter((s) => {
             if (s.sessionId === meta.sessionId) return false
-            if (isNoWorkspace) return !s.worktreePath
-            const na = normalizedActive ?? ''
-            const root = (s.projectRoot ?? s.cwd).replace(/\\/g, '/')
-            return na && (root === na || root.startsWith(na + '/')) && !!s.worktreePath
+            if (isRootWorkspace) return true
+            if (s.workspaceId) return s.workspaceId === activeWorkspaceId
+            if (!normalizedActive) return false
+            const root = normalizePath(s.projectRoot ?? s.cwd)
+            return root === normalizedActive || root.startsWith(normalizedActive + '/')
           })
           .sort((a, b) => b.createdAt - a.createdAt)
         onSelectSession(remaining[0]?.sessionId ?? null)
       }
     })
-  }, [requestClose, activeSessionId, isNoWorkspace, normalizedActive, removeTab, onSelectSession])
+  }, [requestClose, activeSessionId, isRootWorkspace, activeWorkspaceId, normalizedActive, removeTab, onSelectSession])
 
   const handleCloseAllSplits = useCallback(async (meta: SessionMeta) => {
     if (!meta.groupId) return
@@ -279,9 +212,6 @@ export function AgentMonitorSidebar({ activeProject, onProjectChange, activeSess
     openGroupInSplits([activeSessionId, sessionId])
   }, [activeSessionId, openGroupInSplits])
 
-  const workspaceLabel = isNoWorkspace ? 'No Workspace'
-    : normalizedActive ? normalizedActive.split('/').filter(Boolean).pop() ?? normalizedActive
-    : 'No Workspace'
 
   const effectiveActiveId = useMemo(() => {
     if (!activeSessionId || !focusedSessionId) return activeSessionId
@@ -307,7 +237,7 @@ export function AgentMonitorSidebar({ activeProject, onProjectChange, activeSess
       meta={meta}
       activeSessionId={effectiveActiveId}
       worktreeStats={worktreeStats}
-      isNoWorkspace={isNoWorkspace}
+      isNoWorkspace={isRootWorkspace}
       dragging={draggedSessionId === meta.sessionId}
       onSelectSession={() => handleSessionSelect(meta.sessionId)}
       onEditMeta={setEditMeta}
@@ -398,7 +328,7 @@ export function AgentMonitorSidebar({ activeProject, onProjectChange, activeSess
                             meta={meta}
                             activeSessionId={effectiveActiveId}
                             worktreeStats={worktreeStats}
-                            isNoWorkspace={isNoWorkspace}
+                            isNoWorkspace={isRootWorkspace}
                             dragging={draggedSessionId === meta.sessionId}
                             onSelectSession={() => handleSessionSelect(meta.sessionId)}
                             onEditMeta={setEditMeta}
@@ -420,158 +350,157 @@ export function AgentMonitorSidebar({ activeProject, onProjectChange, activeSess
     </>
   )
 
+  const handleFileDragOver = (e: React.DragEvent): void => {
+    if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); setIsDragOver(true) }
+  }
+
+  const handleFileDrop = (e: React.DragEvent): void => {
+    e.preventDefault()
+    setIsDragOver(false)
+    if (!activeSessionId || activeSessionId === '__root__') return
+    const files = Array.from(e.dataTransfer.files)
+    for (const file of files) {
+      const path = (file as unknown as { path: string }).path
+      if (!path) continue
+      if (file.type !== '') {
+        insertLayoutAtRight(activeSessionId, makeFileEditorLeaf(path))
+      }
+    }
+  }
+
   return (
-    <div className="flex flex-col h-full bg-brand-bg w-full">
-      {/* Workspace dropdown */}
-      <div className="flex-shrink-0 p-2 border-b border-brand-panel/60 relative" ref={dropdownRef}>
-        <div className="flex items-center gap-1">
-          <button onClick={() => setDropdownOpen((v) => !v)} className="flex-1 flex items-center gap-2 px-3 py-2 rounded bg-brand-panel hover:bg-brand-panel/80 transition-colors text-left min-w-0">
-            <FolderOpen size={13} className="flex-shrink-0 text-zinc-500" />
-            <span className="flex-1 text-xs text-zinc-300 truncate min-w-0">{workspaceLabel}</span>
-            <ChevronDown size={12} className={cn('flex-shrink-0 text-zinc-500 transition-transform', dropdownOpen && 'rotate-180')} />
+    <div
+      className={cn('flex flex-col h-full bg-brand-bg w-full transition-colors', isDragOver && 'ring-2 ring-inset ring-brand-accent/50')}
+      onDragOver={handleFileDragOver}
+      onDragLeave={() => setIsDragOver(false)}
+      onDrop={handleFileDrop}
+    >
+      {/* Workspace switcher */}
+      <div className="flex-shrink-0 relative px-2 py-2">
+        <div className="flex items-stretch bg-brand-panel/50 hover:bg-brand-panel/80 border border-brand-panel rounded-lg shadow-md transition-colors overflow-hidden">
+          <button
+            onClick={() => setWsOpen((v) => !v)}
+            className="flex items-center gap-2 px-3 py-2 text-left flex-1 min-w-0"
+          >
+            <FolderOpen size={12} className="text-zinc-500 flex-shrink-0" />
+            <span className="text-xs font-medium text-zinc-300 truncate flex-1">
+              {isRootWorkspace ? 'Root' : (activeWorkspace?.name ?? 'Workspace')}
+            </span>
+            <ChevronDown size={10} className={cn('text-zinc-500 transition-transform flex-shrink-0', wsOpen && 'rotate-180')} />
           </button>
-          {!isNoWorkspace && (
+          {!isRootWorkspace && (
             <button
-              onClick={() => setConfirmCloseProject(true)}
-              className="flex items-center justify-center w-7 h-7 rounded hover:bg-red-500/10 text-zinc-600 hover:text-red-400 transition-colors flex-shrink-0"
-              title="Close project"
+              onClick={() => document.dispatchEvent(new CustomEvent('acc:open-file-finder'))}
+              title="File Tree (Ctrl+Shift+E)"
+              className="flex items-center px-2.5 border-l border-brand-panel text-zinc-500 hover:text-zinc-300 transition-colors flex-shrink-0"
             >
-              <X size={13} />
+              <FolderTree size={12} />
             </button>
           )}
         </div>
-        {dropdownOpen && (
+        {wsOpen && (
           <>
-            <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)} />
-            <div className="absolute left-2 right-2 top-full mt-1 z-50 bg-brand-bg border border-brand-panel/60 rounded shadow-xl py-1 max-h-48 overflow-y-auto">
-              <button onClick={() => { setDropdownOpen(false); addProject() }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-zinc-500 hover:bg-brand-panel hover:text-zinc-300 transition-colors text-left">
-                <Plus size={11} />Open Project
+            <div className="fixed inset-0 z-40" onClick={() => setWsOpen(false)} />
+            <div className="absolute left-2 right-2 top-full mt-1 z-50 bg-brand-bg border border-brand-panel/60 rounded-lg shadow-xl py-1 max-h-48 overflow-y-auto">
+              <button
+                onClick={() => { setWsOpen(false); setShowNewWsModal(true) }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-zinc-500 hover:bg-brand-panel hover:text-zinc-300 transition-colors text-left"
+              >
+                <Plus size={11} /> New Workspace
               </button>
               <div className="h-px bg-brand-panel my-1" />
-              <button onClick={() => { onProjectChange(null); setDropdownOpen(false) }} className={cn('w-full flex flex-col px-3 py-1.5 text-left transition-colors hover:bg-brand-panel', isNoWorkspace && 'bg-brand-panel/60')}>
-                <span className="text-xs text-zinc-200">No Workspace</span>
-                <span className="text-[10px] text-zinc-600">Plain sessions, no git required</span>
+              <button
+                onClick={() => { onWorkspaceChange(ROOT_WORKSPACE_ID); setWsOpen(false) }}
+                className={cn('w-full px-3 py-1.5 text-xs text-left transition-colors hover:bg-brand-panel', isRootWorkspace && 'bg-brand-panel/60 text-zinc-200')}
+              >
+                <span className={isRootWorkspace ? 'text-zinc-200' : 'text-zinc-400'}>Root</span>
               </button>
-              {openProjects.length > 0 && <div className="h-px bg-brand-panel my-1" />}
-              {openProjects.map((p) => {
-                const norm = p.replace(/\\/g, '/')
-                return (
-                  <div key={p} className="group relative flex items-center">
-                    <button onClick={() => { onProjectChange(p); setDropdownOpen(false) }} className={cn('flex-1 flex flex-col px-3 py-1.5 text-left transition-colors hover:bg-brand-panel', norm === normalizedActive && 'bg-brand-panel/60')}>
-                      <span className="text-xs text-zinc-200">{p.split('/').filter(Boolean).pop() ?? p}</span>
-                      <span className="text-[10px] text-zinc-600">{shortPath(p)}</span>
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); void removeProject(p); setDropdownOpen(false) }}
-                      className="absolute right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 text-zinc-600 hover:text-red-400"
-                      title="Remove project"
-                    >
-                      <X size={11} />
-                    </button>
-                  </div>
-                )
-              })}
+              {workspaces.filter((w) => !w.isRoot).length > 0 && <div className="h-px bg-brand-panel my-1" />}
+              {workspaces.filter((w) => !w.isRoot).map((w) => (
+                <div key={w.id} className="group relative flex items-center">
+                  <button
+                    onClick={() => { onWorkspaceChange(w.id); setWsOpen(false) }}
+                    className={cn('flex-1 flex flex-col px-3 py-1.5 text-left transition-colors hover:bg-brand-panel', w.id === activeWorkspaceId && 'bg-brand-panel/60')}
+                  >
+                    <span className={cn('text-xs', w.id === activeWorkspaceId ? 'text-zinc-200' : 'text-zinc-400')}>{w.name}</span>
+                    {w.rootPath && <span className="text-[10px] text-zinc-600">{shortPath(w.rootPath)}</span>}
+                  </button>
+                  <button
+                    onClick={async (e) => {
+                      e.stopPropagation()
+                      try {
+                        await deleteWorkspace(w.id)
+                        removeWorkspaceFromStore(w.id)
+                        if (activeWorkspaceId === w.id) onWorkspaceChange(ROOT_WORKSPACE_ID)
+                      } catch {}
+                      setWsOpen(false)
+                    }}
+                    className="absolute right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 text-zinc-600 hover:text-red-400"
+                  >
+                    <X size={11} />
+                  </button>
+                </div>
+              ))}
             </div>
           </>
         )}
+        {showNewWsModal && (
+          <NewWorkspaceModal
+            onDismiss={() => setShowNewWsModal(false)}
+            onSave={async (name, rootPath) => {
+              try {
+                const workspace = await createWorkspace({ name, rootPath })
+                addWorkspace(workspace)
+                onWorkspaceChange(workspace.id)
+                toast.success(`Workspace "${name}" created`)
+              } catch {
+                toast.error('Failed to create workspace')
+              }
+              setShowNewWsModal(false)
+            }}
+          />
+        )}
       </div>
 
-      {/* Body: Sessions section + Notes section */}
+      {/* Body */}
       <div className="flex flex-col flex-1 min-h-0" ref={sidebarBodyRef}>
-
-        {/* Sessions section */}
-        <div
-          className={cn('flex flex-col min-h-0', !sessionsOpen && 'flex-shrink-0')}
-          style={sessionsOpen
-            ? (notesOpen ? { flex: `0 0 ${splitPercent}%` } : { flex: '1 1 0' })
-            : undefined}
-        >
-          <div
-            className="flex-shrink-0 flex items-center gap-0.5 px-3 py-1.5 border-b border-brand-panel/40 cursor-pointer hover:bg-brand-panel/30 transition-colors select-none"
-            onClick={() => setSessionsOpen((v) => !v)}
-          >
-            <ChevronRight
-              size={10}
-              className={cn('flex-shrink-0 text-zinc-600 transition-transform duration-150', sessionsOpen && 'rotate-90')}
-            />
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-600 flex-1">Sessions</span>
-            {sessionsOpen && (isNoWorkspace ? (
-              <>
-                <button
-                  onClick={(e) => { e.stopPropagation(); document.dispatchEvent(new CustomEvent('acc:new-session')) }}
-                  className="p-1 text-zinc-600 hover:text-zinc-300 rounded hover:bg-brand-panel/60 transition-colors"
-                  title="New Session"
-                >
-                  <Plus size={12} />
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); setShowNewGroupModal(true) }}
-                  className="p-1 text-zinc-600 hover:text-zinc-300 rounded hover:bg-brand-panel/60 transition-colors"
-                  title="New Group"
-                >
-                  <Users size={12} />
-                </button>
-              </>
-            ) : (
-              <button
-                onClick={(e) => { e.stopPropagation(); document.dispatchEvent(new CustomEvent('acc:new-task', { detail: { projectPath: activeProject } })) }}
-                className="p-1 text-zinc-600 hover:text-zinc-300 rounded hover:bg-brand-panel/60 transition-colors"
-                title="New Task"
-              >
-                <Plus size={12} />
-              </button>
-            ))}
-          </div>
-
-          {sessionsOpen && (
+        {isRootWorkspace ? (
+          /* Root: sessions always visible, buttons pinned bottom */
+          <div className="flex flex-col flex-1 min-h-0">
             <div className="flex-1 overflow-y-auto min-h-0 py-1">
               {sessionListContent}
             </div>
-          )}
-        </div>
-
-        {/* Resize handle — only when both sections open */}
-        {notesOpen && sessionsOpen && (
-          <div
-            className="h-1 flex-shrink-0 bg-brand-panel/60 hover:bg-brand-accent transition-colors cursor-row-resize"
-            onMouseDown={handleResizeMouseDown}
-          />
-        )}
-
-        {/* Notes section */}
-        <div className={cn('flex flex-col flex-shrink-0', notesOpen && 'flex-1 min-h-0')}>
-          <div
-            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 border-t border-brand-panel/40 cursor-pointer hover:bg-brand-panel/30 transition-colors select-none"
-            onClick={() => setNotesOpen((v) => !v)}
-          >
-            <ChevronRight
-              size={10}
-              className={cn('flex-shrink-0 text-zinc-600 transition-transform duration-150', notesOpen && 'rotate-90')}
-            />
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-600 flex-1">Notes</span>
-            <button
-              onClick={(e) => { e.stopPropagation(); handleNewNote() }}
-              className="p-1 text-zinc-600 hover:text-zinc-300 rounded hover:bg-brand-panel/60 transition-colors"
-              title="New Note (Ctrl+Shift+N)"
-            >
-              <Plus size={12} />
-            </button>
-          </div>
-
-          {notesOpen && (
-            <div className="flex-1 min-h-0 relative overflow-hidden">
-              <div className="absolute inset-0">
-                <FileTree
-                  activeNoteId={sidebarActiveNoteId}
-                  onActivate={handleSidebarNoteActivate}
-                  onCreate={handleNewNote}
-                  onNoteDragStart={(noteId) => startDrag({ type: 'sidebar-notes', noteId })}
-                  onNoteDragEnd={endDrag}
-                />
-              </div>
+            <div className="flex-shrink-0 flex gap-1.5 p-2 border-t border-brand-panel/40">
+              <button
+                onClick={() => document.dispatchEvent(new CustomEvent('acc:new-session'))}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded text-xs text-zinc-500 hover:text-zinc-300 hover:bg-brand-panel/60 transition-colors"
+              >
+                <Plus size={12} /> Session
+              </button>
+              <button
+                onClick={() => setShowNewGroupModal(true)}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded text-xs text-zinc-500 hover:text-zinc-300 hover:bg-brand-panel/60 transition-colors"
+              >
+                <Users size={12} /> Group
+              </button>
             </div>
-          )}
-        </div>
+          </div>
+        ) : (
+          /* Workspace: sessions only */
+          <div className="flex flex-col flex-1 min-h-0">
+            <div className="flex-1 overflow-y-auto min-h-0 py-1">
+              {sessionListContent}
+            </div>
+            <div className="flex-shrink-0 p-2 border-t border-brand-panel/40">
+              <button
+                onClick={() => document.dispatchEvent(new CustomEvent('acc:new-session'))}
+                className="w-full flex items-center justify-center gap-1.5 py-2 rounded text-xs text-zinc-500 hover:text-zinc-300 hover:bg-brand-panel/60 transition-colors"
+              >
+                <Plus size={12} /> New Session
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {ctxMenu && (
@@ -620,17 +549,6 @@ export function AgentMonitorSidebar({ activeProject, onProjectChange, activeSess
       )}
 
       {closeModal}
-
-      {confirmCloseProject && activeProject && (
-        <ConfirmCloseProjectModal
-          workspaceLabel={workspaceLabel}
-          onClose={() => setConfirmCloseProject(false)}
-          onConfirm={() => {
-            setConfirmCloseProject(false)
-            void removeProject(activeProject).then(() => onProjectChange(null))
-          }}
-        />
-      )}
 
       {showNewGroupModal && (
         <NewGroupModal

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect } from 'react'
 
 export type DropSide = 'top' | 'bottom' | 'left' | 'right'
 
@@ -6,6 +6,7 @@ export type DragState =
   | { type: 'layout-leaf'; leafId: string; tabId: string }
   | { type: 'sidebar-session'; sessionId: string }
   | { type: 'sidebar-notes'; noteId: string }
+  | { type: 'file-path'; filePath: string }
 
 export interface DropTarget {
   leafId: string
@@ -38,6 +39,12 @@ export function LayoutDndProvider({ children }: { children: React.ReactNode }): 
     setDragState(null)
     setActiveDropTarget(null)
   }, [])
+
+  // Global safety net: clear drag state when any drag ends (handles drops outside panes or on unmounted sources)
+  useEffect(() => {
+    document.addEventListener('dragend', endDrag)
+    return () => document.removeEventListener('dragend', endDrag)
+  }, [endDrag])
 
   return (
     <LayoutDndContext.Provider value={{ dragState, activeDropTarget, startDrag, endDrag, setActiveDropTarget }}>

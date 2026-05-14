@@ -69,7 +69,7 @@ export function EmptyState(): JSX.Element {
       <div className="flex flex-col gap-0">
         <KeybindEntry hotkey={hotkeys.newSession} label="New session" action={() => document.dispatchEvent(new CustomEvent('acc:new-session'))} />
         <KeybindEntry hotkey="Ctrl+O" label="Open project" action={() => document.dispatchEvent(new CustomEvent('acc:open-project'))} />
-        <KeybindEntry hotkey={hotkeys.commandPalette} label="Command palette" action={() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', ctrlKey: true, bubbles: true }))} />
+        <KeybindEntry hotkey={hotkeys.commandPalette} label="Command palette" action={() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'P', ctrlKey: true, shiftKey: true, bubbles: true }))} />
         <div className="h-px bg-brand-panel/50 mx-3 my-1" />
         <KeybindEntry hotkey={hotkeys.quickNote} label="Toggle notes" action={() => document.dispatchEvent(new CustomEvent('acc:quick-note'))} />
       </div>

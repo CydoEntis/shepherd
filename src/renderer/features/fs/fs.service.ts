@@ -54,6 +54,10 @@ export async function trashEntry(filePath: string): Promise<void> {
   return ipc.invoke(IPC.FS_TRASH, { filePath }) as Promise<void>
 }
 
+export async function copyFile(srcPath: string, destPath: string): Promise<void> {
+  await ipc.invoke(IPC.FS_COPY_FILE, { srcPath, destPath })
+}
+
 export async function findFiles(rootPath: string): Promise<string[]> {
   return ipc.invoke(IPC.FS_FIND_FILES, { rootPath }) as Promise<string[]>
 }

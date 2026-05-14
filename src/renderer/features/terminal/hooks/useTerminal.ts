@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { toast } from 'sonner'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
@@ -17,6 +18,7 @@ interface PoolEntry {
   fitAddon: FitAddon
   searchAddon: SearchAddon
   rendererAddon: WebglAddon | CanvasAddon | null
+  oscDisposables: { dispose(): void }[]
 }
 // Module-level pool: preserves xterm instances across React remounts caused by layout changes.
 // Entries are fully disposed only when the session leaves the store (closed, not just moved).
@@ -340,7 +342,26 @@ export function useTerminal(sessionId: string, containerRef: React.RefObject<HTM
       const unicode11 = new Unicode11Addon()
       terminal.loadAddon(unicode11)
       terminal.unicode.activeVersion = '11'
-      terminalPool.set(sessionId, { terminal, fitAddon, searchAddon, rendererAddon })
+      const oscDisposables: { dispose(): void }[] = []
+
+      // OSC 777;notify;Title;Message — scripts and agents can push toast notifications
+      // directly from the terminal without going through IPC. Handled here (renderer)
+      // because it's display-only and avoids an extra round-trip through the main process.
+      oscDisposables.push(
+        terminal.parser.registerOscHandler(777, (data) => {
+          const semi = data.indexOf(';')
+          if (data.slice(0, semi) !== 'notify') return true
+          const rest = data.slice(semi + 1)
+          const semi2 = rest.indexOf(';')
+          const title = semi2 === -1 ? rest : rest.slice(0, semi2)
+          const message = semi2 === -1 ? '' : rest.slice(semi2 + 1)
+          const sessionName = useStore.getState().sessions[sessionId]?.name
+          toast(title || sessionName || 'Terminal', { description: message || undefined })
+          return true
+        })
+      )
+
+      terminalPool.set(sessionId, { terminal, fitAddon, searchAddon, rendererAddon, oscDisposables })
     }
 
     terminalRef.current = terminal
@@ -610,6 +631,7 @@ export function useTerminal(sessionId: string, containerRef: React.RefObject<HTM
         const poolEntry = terminalPool.get(sessionId)
         terminalPool.delete(sessionId)
         poolEntry?.rendererAddon?.dispose()
+        poolEntry?.oscDisposables.forEach((d) => d.dispose())
         searchAddon.dispose()
         terminal.dispose()
         unregisterTerminal(sessionId)

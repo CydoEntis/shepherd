@@ -16,6 +16,7 @@ export function useSessionLifecycle(): void {
   const removePaneBySessionId = useStore((s) => s.removePaneBySessionId)
   const setWindowId = useStore((s) => s.setWindowId)
   const loadSettings = useStore((s) => s.loadSettings)
+  const loadWorkspaces = useStore((s) => s.loadWorkspaces)
   const setPendingRestore = useStore((s) => s.setPendingRestore)
   const setIsMainWindow = useStore((s) => s.setIsMainWindow)
   const setWindowMeta = useStore((s) => s.setWindowMeta)
@@ -32,6 +33,7 @@ export function useSessionLifecycle(): void {
 
   useEffect(() => {
     loadSettings()
+    loadWorkspaces()
     getWindowInfo().then(({ windowId, isMainWindow }) => {
       setWindowId(windowId)
       setIsMainWindow(isMainWindow)
@@ -77,7 +79,23 @@ export function useSessionLifecycle(): void {
 
     const offMeta = ipc.on(IPC.SESSION_META_UPDATE, (payload) => {
       const meta = payload as SessionMeta
-      // Agent status toasts disabled — detection unreliable, revisit in roadmap
+      const { sessions, paneTree, activeSessionId } = useStore.getState()
+      const prev = sessions[meta.sessionId]
+
+      if (prev?.agentStatus === 'running' && meta.agentStatus === 'waiting-input') {
+        const tabId = findTabForSession(paneTree, meta.sessionId)
+        if (tabId) {
+          useStore.getState().addNotification({ type: 'agent-done', title: `${meta.name} is awaiting input`, tabId })
+          const isBackground = tabId !== activeSessionId
+          toast.success(
+            `${meta.name} is awaiting input`,
+            isBackground
+              ? { action: { label: 'Switch', onClick: () => useStore.getState().setActiveSession(tabId) } }
+              : undefined
+          )
+        }
+      }
+
       upsertSession(meta)
     })
 

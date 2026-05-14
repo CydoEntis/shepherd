@@ -9,6 +9,7 @@ import { useInstalledEditors } from '../../fs/hooks/useInstalledEditors'
 import { openNoteInEditor } from '../notes.service'
 import { WindowMoveSubmenu } from '../../window/components/WindowMoveSubmenu'
 import type { Note } from '@shared/ipc-types'
+import { ROOT_WORKSPACE_ID } from '@shared/ipc-types'
 import type { LayoutNode } from '../../layout/layout-tree'
 
 export function noteTitle(note: Note): string {
@@ -53,6 +54,8 @@ export function FileTree({ activeNoteId, onActivate, onCreate, onNoteDragStart, 
   const saveNote = useStore((s) => s.saveNote)
   const setNoteColor = useStore((s) => s.setNoteColor)
   const noteColorMap = useStore((s) => s.settings.noteColorMap ?? {})
+  const noteWorkspaceMap = useStore((s) => s.settings.noteWorkspaceMap ?? {})
+  const activeWorkspaceId = useStore((s) => s.activeWorkspaceId)
   const isMainWindow = useStore((s) => s.isMainWindow)
   const paneTree = useStore((s) => s.paneTree)
   const removeNotePaneFromLayout = useStore((s) => s.removeNotePaneFromLayout)
@@ -163,14 +166,20 @@ export function FileTree({ activeNoteId, onActivate, onCreate, onNoteDragStart, 
   }
 
   const filteredNotes = (() => {
-    if (isMainWindow) return notes.filter((n) => !detachedNoteIds.includes(n.id))
-    const ids = new Set<string>()
-    const collect = (node: LayoutNode): void => {
-      if (node.type === 'leaf' && (node.panel === 'notes' || node.panel === 'markdown-preview') && node.noteId) ids.add(node.noteId)
-      else if (node.type === 'split') node.children.forEach(collect)
+    let base: Note[]
+    if (isMainWindow) {
+      base = notes.filter((n) => !detachedNoteIds.includes(n.id))
+    } else {
+      const ids = new Set<string>()
+      const collect = (node: LayoutNode): void => {
+        if (node.type === 'leaf' && (node.panel === 'notes' || node.panel === 'markdown-preview') && node.noteId) ids.add(node.noteId)
+        else if (node.type === 'split') node.children.forEach(collect)
+      }
+      for (const tree of Object.values(paneTree)) collect(tree)
+      base = notes.filter(n => ids.has(n.id))
     }
-    for (const tree of Object.values(paneTree)) collect(tree)
-    return notes.filter(n => ids.has(n.id))
+    if (activeWorkspaceId === ROOT_WORKSPACE_ID) return base
+    return base.filter((n) => (noteWorkspaceMap[n.id] ?? ROOT_WORKSPACE_ID) === activeWorkspaceId)
   })()
   const sorted = filteredNotes.slice().sort((a, b) => b.updatedAt - a.updatedAt)
   const matchesQuery = (n: Note): boolean => !query || n.content.toLowerCase().includes(query.toLowerCase())

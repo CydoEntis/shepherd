@@ -3,6 +3,7 @@ import { mkdirSync } from 'fs'
 import { join } from 'path'
 import { webContents } from 'electron'
 import { PtyProcess } from '../../lib/pty-process'
+import { detectAdapter } from '../../lib/agent-adapters'
 import {
   registerSession,
   getSession,
@@ -14,11 +15,36 @@ import { IPC } from '@shared/ipc-channels'
 import { getSettings } from '../settings/settings-store'
 import { getSbxExecutable } from '../../lib/sbx'
 import { getMainWindow } from '../../window-manager'
+import { startAgentStatusServer, registerAgentStatusCallback, getAgentStatusPort } from '../../lib/agent-status-server'
+import { writeClaudeHooksConfig, removeClaudeHooksConfig } from '../../lib/claude-hooks'
 import type {
   CreateSessionPayload,
   SessionMeta,
   SessionExitPayload
 } from '@shared/ipc-types'
+
+// Per-session idle timers for status signals received via the HTTP hooks path.
+// Mirrors PtyProcess's idleTimer for signals that bypass the PTY data stream.
+const hookIdleTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+// Start status server at module load so the port is ready before any session is created.
+startAgentStatusServer()
+  .then(() => {
+    registerAgentStatusCallback((sessionId, status) => {
+      clearTimeout(hookIdleTimers.get(sessionId))
+      hookIdleTimers.delete(sessionId)
+      const updated = updateSessionMeta(sessionId, { agentStatus: status })
+      if (updated) { broadcastMetaUpdate(updated); syncTaskbarProgress() }
+      if (status === 'waiting-input') {
+        hookIdleTimers.set(sessionId, setTimeout(() => {
+          hookIdleTimers.delete(sessionId)
+          const idled = updateSessionMeta(sessionId, { agentStatus: 'idle' })
+          if (idled) { broadcastMetaUpdate(idled); syncTaskbarProgress() }
+        }, 5_000))
+      }
+    })
+  })
+  .catch(() => { /* hooks won't fire; OSC detection is the fallback */ })
 
 function syncTaskbarProgress(): void {
   const win = getMainWindow()
@@ -79,7 +105,16 @@ export function createSession(
   const defaultCwd = getSettings().defaultSessionDir || join(home, 'Orbit')
   const cwd = payload.cwd || defaultCwd
   try { mkdirSync(cwd, { recursive: true }) } catch {}
-  const { command, args, sandboxed } = resolveShellSpawn(payload.agentCommand, payload.yoloMode, payload.noSandbox, payload.useSandbox)
+  const agentAdapter = payload.agentCommand ? detectAdapter(payload.agentCommand) : undefined
+  const effectiveAgentCommand = agentAdapter && payload.agentCommand
+    ? agentAdapter.modifyCommand(payload.agentCommand)
+    : payload.agentCommand
+  const { command, args, sandboxed } = resolveShellSpawn(effectiveAgentCommand, payload.yoloMode, payload.noSandbox, payload.useSandbox)
+
+  if (agentAdapter?.name === 'claude') {
+    const port = getAgentStatusPort()
+    if (port !== null) writeClaudeHooksConfig(sessionId, port)
+  }
 
   const meta: SessionMeta = {
     sessionId,
@@ -101,6 +136,7 @@ export function createSession(
     worktreeBranch: payload.worktreeBranch,
     worktreeBaseBranch: payload.worktreeBaseBranch,
     projectRoot: payload.projectRoot,
+    workspaceId: payload.workspaceId,
   }
 
   const pty = new PtyProcess({
@@ -111,6 +147,7 @@ export function createSession(
     cols: payload.cols,
     rows: payload.rows,
     skipShellIntegration: !!payload.agentCommand,
+    agentAdapter,
     onCwdChange: (newCwd) => {
       const updated = updateSessionMeta(sessionId, { cwd: newCwd })
       if (updated) broadcastMetaUpdate(updated)
@@ -135,6 +172,7 @@ export function createSession(
   }
 
   pty.onExit((exitCode) => {
+    if (agentAdapter?.name === 'claude') removeClaudeHooksConfig(sessionId)
     const updated = updateSessionMeta(sessionId, { status: 'exited', exitCode })
     if (updated) broadcastMetaUpdate(updated)
     syncTaskbarProgress()

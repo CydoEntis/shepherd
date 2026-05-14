@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { NoteDrawer } from '../../../components/NoteDrawer'
 import { useStore } from '../../../store/root.store'
+import { ROOT_WORKSPACE_ID } from '@shared/ipc-types'
 
 interface Props {
   tabId: string
@@ -14,6 +15,7 @@ export function NotesPane({ tabId, leafId, initialNoteId }: Props): JSX.Element 
   const updateLeafNoteId = useStore((s) => s.updateLeafNoteId)
   const addNote = useStore((s) => s.addNote)
   const saveNote = useStore((s) => s.saveNote)
+  const setNoteWorkspace = useStore((s) => s.setNoteWorkspace)
   const notes = useStore((s) => s.notes)
 
   const [activeNoteId, setActiveNoteId] = useState<string | null>(initialNoteId ?? null)
@@ -50,7 +52,7 @@ export function NotesPane({ tabId, leafId, initialNoteId }: Props): JSX.Element 
   }, [leafId])
 
   const createNote = useCallback((): string => {
-    const { notes: current } = useStore.getState()
+    const { notes: current, activeWorkspaceId } = useStore.getState()
     const sorted = [...current].sort((a, b) => b.updatedAt - a.updatedAt)
     if (sorted.length > 0 && sorted[0].content.trim() === '') {
       setActiveNoteId(sorted[0].id)
@@ -59,9 +61,12 @@ export function NotesPane({ tabId, leafId, initialNoteId }: Props): JSX.Element 
     const id = crypto.randomUUID()
     addNote(id)
     saveNote(id, '')
+    if (activeWorkspaceId && activeWorkspaceId !== ROOT_WORKSPACE_ID) {
+      void setNoteWorkspace(id, activeWorkspaceId)
+    }
     setActiveNoteId(id)
     return id
-  }, [addNote, saveNote])
+  }, [addNote, saveNote, setNoteWorkspace])
 
   useEffect(() => {
     const handler = (): void => { createNote() }

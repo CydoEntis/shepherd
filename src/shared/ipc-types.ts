@@ -1,5 +1,33 @@
 import { z } from 'zod'
 
+// ─── Workspace ───────────────────────────────────────────────────────────────
+
+export const ROOT_WORKSPACE_ID = 'workspace-root'
+
+export const WorkspaceSchema = z.object({
+  id: z.string(),
+  name: z.string().min(1).max(64),
+  rootPath: z.string().default(''),
+  color: z.string().optional(),
+  createdAt: z.number(),
+  isRoot: z.boolean().default(false),
+})
+export type Workspace = z.infer<typeof WorkspaceSchema>
+
+// ─── UI State ────────────────────────────────────────────────────────────────
+
+export const PersistedOpenFileSchema = z.object({
+  path: z.string(),
+  root: z.string(),
+})
+export type PersistedOpenFile = z.infer<typeof PersistedOpenFileSchema>
+
+export const UiStateSchema = z.object({
+  openFiles: z.array(PersistedOpenFileSchema).default([]),
+  activeFilePath: z.string().nullable().default(null),
+})
+export type UiState = z.infer<typeof UiStateSchema>
+
 // ─── Session ────────────────────────────────────────────────────────────────
 
 export const CreateSessionPayloadSchema = z.object({
@@ -16,7 +44,8 @@ export const CreateSessionPayloadSchema = z.object({
   worktreePath: z.string().optional(),
   worktreeBranch: z.string().optional(),
   worktreeBaseBranch: z.string().optional(),
-  projectRoot: z.string().optional()
+  projectRoot: z.string().optional(),
+  workspaceId: z.string().optional(),
 })
 export type CreateSessionPayload = z.infer<typeof CreateSessionPayloadSchema>
 
@@ -51,6 +80,7 @@ export const SessionMetaSchema = z.object({
   worktreeBranch: z.string().optional(),
   worktreeBaseBranch: z.string().optional(),
   projectRoot: z.string().optional(),
+  workspaceId: z.string().optional(),
 })
 export type SessionMeta = z.infer<typeof SessionMetaSchema>
 
@@ -173,6 +203,7 @@ export const HotkeysSchema = z.object({
   quickNote: z.string().default('Ctrl+Shift+N'),
   showShortcuts: z.string().default('Ctrl+Shift+K'),
   reviewChanges: z.string().default('Ctrl+Shift+G'),
+  openFileFinder: z.string().default('Ctrl+Shift+E'),
 })
 export type Hotkeys = z.infer<typeof HotkeysSchema>
 
@@ -213,6 +244,7 @@ export const AppSettingsSchema = z.object({
   noteFolders: z.array(NoteFolderSchema).default([]),
   noteFolderMap: z.record(z.string()).default({}),
   noteColorMap: z.record(z.string(), z.string()).default({}),
+  noteWorkspaceMap: z.record(z.string(), z.string()).default({}),
   lastActiveProject: z.string().default(''),
   defaultSessionDir: z.string().default(''),
   dismissedReleaseVersion: z.string().default(''),
@@ -240,6 +272,7 @@ export interface PersistedSession {
   worktreeBranch?: string
   worktreeBaseBranch?: string
   projectRoot?: string
+  workspaceId?: string
 }
 
 export interface PersistedTab {

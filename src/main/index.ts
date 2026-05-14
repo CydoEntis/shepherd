@@ -6,6 +6,8 @@ import { registerSettingsIpc } from './features/settings/settings-ipc'
 import { registerPersistenceIpc } from './features/persistence/persistence-ipc'
 import { registerFsIpc } from './features/fs/fs-ipc'
 import { registerNotesIpc } from './features/notes/notes-ipc'
+import { registerWorkspaceIpc } from './features/workspace/workspace-ipc'
+import { registerUiStateIpc } from './features/ui-state/ui-state-ipc'
 import { initUpdater } from './features/updater/updater'
 
 app.setName('Orbit')
@@ -28,6 +30,8 @@ function registerAllIpc(): void {
   registerPersistenceIpc()
   registerFsIpc()
   registerNotesIpc()
+  registerWorkspaceIpc()
+  registerUiStateIpc()
 }
 
 app.whenReady().then(() => {

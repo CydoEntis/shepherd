@@ -8,9 +8,11 @@ import logoUrl from '../assets/logo.png'
 interface Props {
   title: string
   subtitle?: string
+  center?: React.ReactNode
+  rightExtra?: React.ReactNode
 }
 
-export function TitleBar({ title, subtitle }: Props): JSX.Element {
+export function TitleBar({ title, subtitle, center, rightExtra }: Props): JSX.Element {
   const isMaximized = useWindowMaximized()
   const windowColor = useStore((s) => s.windowColor)
   const windowId = useStore((s) => s.windowId)
@@ -36,11 +38,18 @@ export function TitleBar({ title, subtitle }: Props): JSX.Element {
         </span>
       </div>
 
-      {/* Center: active context */}
-      <div className="flex-1 flex flex-col items-center justify-center min-w-0 px-4">
-        <span className="text-xs font-medium text-zinc-200 truncate max-w-xs">{title}</span>
-        {subtitle && (
-          <span className="text-[10px] text-zinc-600 truncate max-w-xs">{subtitle}</span>
+      {/* Center slot */}
+      <div
+        className="flex-1 flex flex-col items-center justify-center min-w-0 px-4"
+        style={center ? { WebkitAppRegion: 'no-drag' } as React.CSSProperties : undefined}
+      >
+        {center ?? (
+          <>
+            <span className="text-xs font-medium text-zinc-200 truncate max-w-xs">{title}</span>
+            {subtitle && (
+              <span className="text-[10px] text-zinc-600 truncate max-w-xs">{subtitle}</span>
+            )}
+          </>
         )}
       </div>
 
@@ -49,6 +58,7 @@ export function TitleBar({ title, subtitle }: Props): JSX.Element {
         className="flex items-center gap-1 px-2 flex-shrink-0 w-44 justify-end"
         style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
       >
+        {rightExtra}
         <button onClick={() => sendWindowControl('minimize')} className="w-7 h-7 flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-brand-panel/50 transition-colors rounded" title="Minimize">
           <Minus size={11} />
         </button>

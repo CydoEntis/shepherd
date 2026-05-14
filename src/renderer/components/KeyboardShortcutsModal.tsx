@@ -79,6 +79,7 @@ export function KeyboardShortcutsModal({ open, onClose }: Props): JSX.Element | 
       title: 'Global',
       rows: [
         { label: 'Command Palette',    binding: hk.commandPalette },
+        { label: 'File Tree',          binding: hk.openFileFinder },
         { label: 'Show Shortcuts',     binding: hk.showShortcuts },
         { label: 'Open Project',       binding: hk.openProject },
       ]

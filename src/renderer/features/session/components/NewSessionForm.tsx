@@ -64,11 +64,13 @@ export function NewSessionForm({ variant = 'icon' }: { variant?: 'icon' | 'sideb
   const [useSandboxMode, setUseSandboxMode] = useState(false)
   const [sbxAvailable, setSbxAvailable] = useState(false)
   const [workspacePath, setWorkspacePath] = useState<string | null>(null)
+  const [activeTaskWorkspaceId, setActiveTaskWorkspaceId] = useState<string | undefined>(undefined)
   const [splitTarget, setSplitTarget] = useState<{ tabId: string; sessionId: string; direction: 'horizontal' | 'vertical' } | null>(null)
   const upsertSession = useStore((s) => s.upsertSession)
   const addTab = useStore((s) => s.addTab)
   const splitPane = useStore((s) => s.splitPane)
   const settings = useStore((s) => s.settings)
+  const workspaces = useStore((s) => s.workspaces)
   const groups = settings.sessionGroups ?? []
 
   useEffect(() => {
@@ -94,8 +96,10 @@ export function NewSessionForm({ variant = 'icon' }: { variant?: 'icon' | 'sideb
 
   useEffect(() => {
     const handler = (e: Event): void => {
-      const detail = (e as CustomEvent<{ projectPath: string }>).detail
-      setWorkspacePath(detail.projectPath)
+      const detail = (e as CustomEvent<{ workspaceId: string }>).detail
+      const workspace = useStore.getState().workspaces.find((w) => w.id === detail.workspaceId)
+      setActiveTaskWorkspaceId(detail.workspaceId)
+      setWorkspacePath(workspace?.rootPath || null)
       setOpen(true)
     }
     document.addEventListener('acc:new-task', handler)
@@ -113,6 +117,8 @@ export function NewSessionForm({ variant = 'icon' }: { variant?: 'icon' | 'sideb
       checkSbxAvailable().then(setSbxAvailable).catch(() => {})
     } else {
       setSplitTarget(null)
+      setWorkspacePath(null)
+      setActiveTaskWorkspaceId(undefined)
     }
   }, [open])
 
@@ -163,7 +169,8 @@ export function NewSessionForm({ variant = 'icon' }: { variant?: 'icon' | 'sideb
           worktreePath: worktreeResult.worktreePath,
           worktreeBranch: worktreeResult.branchName,
           worktreeBaseBranch: worktreeResult.baseBranch,
-          projectRoot: workspacePath
+          projectRoot: workspacePath,
+          workspaceId: activeTaskWorkspaceId
         })
         upsertSession(meta)
         addTab(meta.sessionId)
@@ -176,7 +183,8 @@ export function NewSessionForm({ variant = 'icon' }: { variant?: 'icon' | 'sideb
           rows: DEFAULT_ROWS,
           yoloMode: yoloMode || undefined,
           noSandbox: skipSandbox || undefined,
-          useSandbox: useSandboxMode || undefined
+          useSandbox: useSandboxMode || undefined,
+          workspaceId: activeTaskWorkspaceId
         })
         upsertSession(meta)
         splitPane(splitTarget.tabId, splitTarget.sessionId, splitTarget.direction, meta)
@@ -204,6 +212,7 @@ export function NewSessionForm({ variant = 'icon' }: { variant?: 'icon' | 'sideb
       setSkipSandbox(false)
       setUseSandboxMode(false)
       setWorkspacePath(null)
+      setActiveTaskWorkspaceId(undefined)
       setSplitTarget(null)
       setOpen(false)
     } catch (err) {
@@ -219,7 +228,7 @@ export function NewSessionForm({ variant = 'icon' }: { variant?: 'icon' | 'sideb
   const isWorkspaceMode = workspacePath !== null
   const isSplitMode = splitTarget !== null
   const projectLabel = isWorkspaceMode
-    ? normalizePath(workspacePath).split('/').filter(Boolean).pop() ?? workspacePath
+    ? (workspaces.find((w) => w.id === activeTaskWorkspaceId)?.name ?? normalizePath(workspacePath).split('/').filter(Boolean).pop() ?? workspacePath)
     : null
 
   const dialogContent = (

@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from 'react-resizable-panels'
-import { EmptyState } from '../../../components/EmptyState'
+import { WorkspaceDashboard } from '../../workspace/components/WorkspaceDashboard'
 import { TerminalPane } from './TerminalPane'
 import { NotesPane } from '../../layout/components/NotesPane'
 import { MarkdownPreviewPane } from '../../layout/components/MarkdownPreviewPane'
+import { MonacoEditorPane } from '../../fs/components/MonacoEditorPane'
 import { PaneDropTarget } from '../../layout/dnd/PaneDropTarget'
 import { NotePaneCtxMenu } from '../../notes/components/NotePaneCtxMenu'
 import { useStore } from '../../../store/root.store'
@@ -47,8 +48,8 @@ export function PaneTreeRenderer({ node, tabId, onContextMenu, forceMainWindow, 
     if (node.panel === 'home') {
       return (
         <PaneDropTarget leafId={node.id} tabId={tabId}>
-          <div className="w-full h-full flex items-center justify-center">
-            <EmptyState />
+          <div className="relative w-full h-full">
+            <WorkspaceDashboard />
           </div>
         </PaneDropTarget>
       )
@@ -122,6 +123,16 @@ export function PaneTreeRenderer({ node, tabId, onContextMenu, forceMainWindow, 
               onClose={() => removeLayoutLeaf(tabId, node.id)}
             />
           )}
+        </PaneDropTarget>
+      )
+    }
+
+    if (node.panel === 'file-editor') {
+      return (
+        <PaneDropTarget leafId={node.id} tabId={tabId}>
+          <div className="relative w-full h-full" onMouseDownCapture={() => setFocusedLeaf(node.id)}>
+            <MonacoEditorPane filePath={node.filePath} tabId={tabId} leafId={node.id} />
+          </div>
         </PaneDropTarget>
       )
     }

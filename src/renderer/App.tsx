@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { Toaster } from 'sonner'
-import { Settings, Moon, Sun, Monitor, Sparkles, GitBranch, Palette, Star, Flame, Waves, HelpCircle, Globe, Zap, ExternalLink } from 'lucide-react'
+import { Toaster, toast } from 'sonner'
+import { Settings, Moon, Sun, Monitor, Sparkles, GitBranch, Palette, Star, Flame, Waves, HelpCircle, Globe, Zap, ExternalLink, FolderOpen, ChevronDown, Plus, X } from 'lucide-react'
 import { marked } from 'marked'
 import { createPortal } from 'react-dom'
 import { useTheme } from './hooks/useTheme'
@@ -9,6 +9,7 @@ import { useNoteWindowPreview } from './hooks/useNoteWindowPreview'
 import { TitleBar } from './components/TitleBar'
 import { PaneContextMenu } from './features/session/components/PaneContextMenu'
 import { CommandPalette } from './components/CommandPalette'
+import { FileFinderModal } from './features/fs/components/FileFinderModal'
 import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal'
 import { ReleaseNotesModal } from './components/ReleaseNotesModal'
 import { NewSessionForm } from './features/session/components/NewSessionForm'
@@ -30,10 +31,14 @@ import { TERMINAL_THEME_LIST } from './features/terminal/hooks/useTerminal'
 import { setWindowMeta } from './features/window/window.service'
 import { useInstalledEditors } from './features/fs/hooks/useInstalledEditors'
 import { openInEditor } from './features/fs/fs.service'
+import { createWorkspace, deleteWorkspace } from './features/workspace/workspace.service'
+import { NewWorkspaceModal } from './features/workspace/components/NewWorkspaceModal'
+import { NotificationBell } from './features/notifications/components/NotificationBell'
 import { openNoteInEditor } from './features/notes/notes.service'
 import { ipc } from './lib/ipc'
 import { IPC } from '@shared/ipc-channels'
-import { cn } from './lib/utils'
+import { ROOT_WORKSPACE_ID } from '@shared/ipc-types'
+import { cn, normalizePath, shortPath } from './lib/utils'
 
 declare const __APP_VERSION__: string
 
@@ -257,6 +262,7 @@ export function App(): JSX.Element {
   useAutoUpdater()
 
   const tabOrder = useStore((s) => s.tabOrder)
+  const paneTree = useStore((s) => s.paneTree)
   const sessions = useStore((s) => s.sessions)
   const appTheme = useStore((s) => s.settings.theme)
   const storeActiveSessionId = useStore((s) => s.activeSessionId)
@@ -267,18 +273,30 @@ export function App(): JSX.Element {
   const dismissedReleaseVersion = useStore((s) => s.settings.dismissedReleaseVersion)
   const updateSettings = useStore((s) => s.updateSettings)
   const patchNoteContent = useStore((s) => s.patchNoteContent)
+  const addNotification = useStore((s) => s.addNotification)
+  const markTabNotificationsRead = useStore((s) => s.markTabNotificationsRead)
 
   const [contextMenu, setContextMenu] = useState<ContextMenuTarget | null>(null)
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [fileFinderOpen, setFileFinderOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [releaseNotesOpen, setReleaseNotesOpen] = useState(false)
   const [sidePanel, setSidePanel] = useState<'settings' | 'git' | null>(null)
   const [openInMenuOpen, setOpenInMenuOpen] = useState(false)
   const [activeNoteId, setActiveNoteId] = useState<string | null>(null)
   const [workspaceSessionId, setWorkspaceSessionId] = useState<string | null>('__root__')
-  const [workspaceProject, setWorkspaceProject] = useState<string | null>(
-    () => localStorage.getItem('orbit:workspaceProject') ?? null
-  )
+
+  useEffect(() => {
+    if (workspaceSessionId && workspaceSessionId !== '__root__' && !paneTree[workspaceSessionId]) {
+      setWorkspaceSessionId('__root__')
+    }
+  }, [workspaceSessionId, paneTree])
+
+  const activeWorkspaceId = useStore((s) => s.activeWorkspaceId)
+  const workspaces = useStore((s) => s.workspaces)
+  const setActiveWorkspaceId = useStore((s) => s.setActiveWorkspaceId)
+  const resetRootPane = useStore((s) => s.resetRootPane)
+  const workspaceProject = workspaces.find((w) => w.id === activeWorkspaceId)?.rootPath || null
   const { sidebarWidth, handleSidebarDragStart } = useSidebarResize(224)
   const installedEditors = useInstalledEditors()
 
@@ -292,15 +310,31 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     if (settingsLoaded && dismissedReleaseVersion !== __APP_VERSION__) {
-      setReleaseNotesOpen(true)
+      addNotification({ type: 'release-notes', title: `What's new in v${__APP_VERSION__}` })
     }
   }, [settingsLoaded, dismissedReleaseVersion])
+
+  useEffect(() => {
+    const handler = (): void => setReleaseNotesOpen(true)
+    document.addEventListener('acc:open-release-notes', handler)
+    return () => document.removeEventListener('acc:open-release-notes', handler)
+  }, [])
+
+  useEffect(() => {
+    if (storeActiveSessionId) markTabNotificationsRead(storeActiveSessionId)
+  }, [storeActiveSessionId])
 
   useEffect(() => {
     const handler = (): void => { if (gitRoot) setSidePanel(p => p === 'git' ? null : 'git') }
     document.addEventListener('acc:toggle-git-review', handler)
     return () => document.removeEventListener('acc:toggle-git-review', handler)
   }, [gitRoot])
+
+  useEffect(() => {
+    const handler = (): void => setFileFinderOpen(true)
+    document.addEventListener('acc:open-file-finder', handler)
+    return () => document.removeEventListener('acc:open-file-finder', handler)
+  }, [])
 
   useEffect(() => { setSidePanel(null) }, [workspaceProject])
 
@@ -320,29 +354,15 @@ export function App(): JSX.Element {
   }, [patchNoteContent])
 
   useEffect(() => {
-    const newId = storeActiveSessionId ?? '__root__'
-    if (newId !== '__root__') {
-      const { sessions: currentSessions } = useStore.getState()
-      const session = currentSessions[newId]
-      if (workspaceProject && session) {
-        const normalized = workspaceProject.replace(/\\/g, '/')
-        const root = (session.projectRoot ?? session.cwd ?? '').replace(/\\/g, '/')
-        const belongsToWorkspace = (root === normalized || root.startsWith(normalized + '/')) && !!session.worktreePath
-        if (!belongsToWorkspace) {
-          setWorkspaceSessionId('__root__')
-          return
-        }
-      }
-    }
-    setWorkspaceSessionId(newId)
-  }, [storeActiveSessionId, workspaceProject])
+    setWorkspaceSessionId(storeActiveSessionId ?? '__root__')
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeActiveSessionId])
 
-  const handleWorkspaceProjectChange = useCallback((path: string | null) => {
-    setWorkspaceProject(path)
+  const handleWorkspaceChange = useCallback((id: string) => {
+    setActiveWorkspaceId(id)
     setWorkspaceSessionId('__root__')
-    if (path) localStorage.setItem('orbit:workspaceProject', path)
-    else localStorage.removeItem('orbit:workspaceProject')
-  }, [])
+    resetRootPane()
+  }, [setActiveWorkspaceId, resetRootPane])
 
   useTheme(appTheme)
 
@@ -351,8 +371,19 @@ export function App(): JSX.Element {
   useKeyboardShortcuts({
     onTogglePalette: () => setPaletteOpen((v) => !v),
     onShowShortcuts: () => setShortcutsOpen((v) => !v),
+    onOpenFileFinder: useCallback(() => setFileFinderOpen(true), []),
     onNewNoteDrawer: useCallback(() => {
-      const { paneTree, activeSessionId: tabId } = useStore.getState()
+      const { activeWorkspaceId, workspaces, activeSessionId: tabId, paneTree } = useStore.getState()
+      const workspace = workspaces.find((w) => w.id === activeWorkspaceId && !w.isRoot)
+
+      if (workspace?.rootPath) {
+        document.dispatchEvent(new CustomEvent('acc:new-file-at-root', {
+          detail: { parentDir: normalizePath(workspace.rootPath), type: 'file' }
+        }))
+        return
+      }
+
+      // Root or workspace without folder — toggle notes pane
       if (!tabId) return
       const tree = paneTree[tabId]
       if (tree && findNotesLeafId(tree)) {
@@ -430,8 +461,8 @@ export function App(): JSX.Element {
         {/* Sidebar — always visible */}
         <div style={{ width: sidebarWidth, flexShrink: 0 }} className="flex flex-col h-full border-r border-brand-panel">
           <AgentMonitorSidebar
-            activeProject={workspaceProject}
-            onProjectChange={handleWorkspaceProjectChange}
+            activeWorkspaceId={activeWorkspaceId}
+            onWorkspaceChange={handleWorkspaceChange}
             activeSessionId={workspaceSessionId}
             onSelectSession={setWorkspaceSessionId}
           />
@@ -565,6 +596,7 @@ export function App(): JSX.Element {
           {workspaceSessionId !== null && (
             <StatusTerminalThemeToggle sessionId={workspaceSessionId} />
           )}
+          <NotificationBell />
           <StatusThemeToggle />
           <button
             onClick={() => setSidePanel(p => p === 'settings' ? null : 'settings')}
@@ -598,6 +630,11 @@ export function App(): JSX.Element {
         onClose={() => setPaletteOpen(false)}
         onShowShortcuts={() => { setPaletteOpen(false); setShortcutsOpen(true) }}
       />
+      <FileFinderModal
+        open={fileFinderOpen}
+        rootPath={workspaceProject ?? ''}
+        onClose={() => setFileFinderOpen(false)}
+      />
       <KeyboardShortcutsModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
       <ReleaseNotesModal
         open={releaseNotesOpen}
@@ -607,7 +644,18 @@ export function App(): JSX.Element {
           setReleaseNotesOpen(false)
         }}
       />
-      <Toaster position="bottom-right" theme="dark" richColors />
+      <Toaster
+        position="bottom-right"
+        theme="dark"
+        richColors
+        toastOptions={{
+          actionButtonStyle: {
+            background: 'rgba(255,255,255,0.15)',
+            border: '1px solid rgba(255,255,255,0.25)',
+            color: 'inherit',
+          }
+        }}
+      />
       {windowHighlighted && (
         <div
           className="fixed inset-0 pointer-events-none z-[9999] animate-pulse"

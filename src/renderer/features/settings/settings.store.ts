@@ -22,6 +22,7 @@ export interface SettingsSlice {
   renameNoteFolder: (id: string, name: string, color?: string) => Promise<void>
   setNoteFolder: (noteId: string, folderId: string | null) => Promise<void>
   setNoteColor: (noteId: string, color: string | null) => Promise<void>
+  setNoteWorkspace: (noteId: string, workspaceId: string | null) => Promise<void>
 }
 
 export const createSettingsSlice: StateCreator<RootStore, [['zustand/immer', never]], [], SettingsSlice> = (set, get) => ({
@@ -114,5 +115,15 @@ export const createSettingsSlice: StateCreator<RootStore, [['zustand/immer', nev
       current[noteId] = color
     }
     await get().updateSettings({ noteColorMap: current })
+  },
+
+  setNoteWorkspace: async (noteId: string, workspaceId: string | null) => {
+    const current = { ...(get().settings.noteWorkspaceMap ?? {}) }
+    if (workspaceId === null) {
+      delete current[noteId]
+    } else {
+      current[noteId] = workspaceId
+    }
+    await get().updateSettings({ noteWorkspaceMap: current })
   },
 })

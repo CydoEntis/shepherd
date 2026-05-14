@@ -1,8 +1,9 @@
 import { useRef, useCallback } from 'react'
+import { GripHorizontal } from 'lucide-react'
 import { cn } from '../../../lib/utils'
 import { useLayoutDnd } from './LayoutDndContext'
 import { useStore } from '../../../store/root.store'
-import { makeNotesLeaf, findNotesLeafIdForNote } from '../layout-tree'
+import { makeNotesLeaf, findNotesLeafIdForNote, makeFileEditorLeaf, findLeafById } from '../layout-tree'
 import type { DropSide } from './LayoutDndContext'
 
 interface Props {
@@ -11,12 +12,10 @@ interface Props {
   children: React.ReactNode
 }
 
-/** Compute which edge the pointer is closest to using a diamond test */
 function hitSide(e: React.DragEvent, el: HTMLElement): DropSide {
   const rect = el.getBoundingClientRect()
   const rx = (e.clientX - rect.left) / rect.width
   const ry = (e.clientY - rect.top) / rect.height
-  // dx/dy = distance to nearest horizontal/vertical edge
   const dx = Math.min(rx, 1 - rx)
   const dy = Math.min(ry, 1 - ry)
   if (dx < dy) return rx < 0.5 ? 'left' : 'right'
@@ -30,7 +29,6 @@ const ZONE_CLASS: Record<DropSide, string> = {
   bottom: 'bottom-1 left-1 right-1 h-[45%]',
 }
 
-// Transparent 1x1 gif — suppresses the browser's default drag ghost image
 const GHOST_SRC = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
 
 export function PaneDropTarget({ leafId, tabId, children }: Props): JSX.Element {
@@ -48,11 +46,8 @@ export function PaneDropTarget({ leafId, tabId, children }: Props): JSX.Element 
   const activeZone = activeDropTarget?.leafId === leafId ? activeDropTarget.side : null
 
   const handleDragStart = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    // Suppress default ghost — the drop zone highlight is the visual feedback
     if (!ghostRef.current) {
-      const img = new Image()
-      img.src = GHOST_SRC
-      ghostRef.current = img
+      const img = new Image(); img.src = GHOST_SRC; ghostRef.current = img
     }
     e.dataTransfer.setDragImage(ghostRef.current, 0, 0)
     e.dataTransfer.effectAllowed = 'move'
@@ -70,13 +65,33 @@ export function PaneDropTarget({ leafId, tabId, children }: Props): JSX.Element 
     }
   }, [dragState, isSource, leafId, activeDropTarget, setActiveDropTarget])
 
+  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (!paneRef.current?.contains(e.relatedTarget as Node)) {
+      setActiveDropTarget(null)
+    }
+  }, [setActiveDropTarget])
+
   const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
-    if (!dragState || !activeZone) { endDrag(); return }
+    if (!dragState) { endDrag(); return }
+
     const tree = paneTree[tabId]
-    const direction = activeZone === 'left' || activeZone === 'right' ? 'horizontal' : 'vertical'
-    const side = activeZone === 'right' || activeZone === 'bottom' ? 'after' : 'before'
-    if (dragState.type === 'layout-leaf') {
+    const direction = (activeZone === 'left' || activeZone === 'right') ? 'horizontal' : 'vertical'
+    const side = (activeZone === 'right' || activeZone === 'bottom') ? 'after' : 'before'
+
+    if (dragState.type === 'file-path') {
+      const targetLeaf = tree ? findLeafById(tree, leafId) : null
+      if (targetLeaf?.type === 'leaf' && targetLeaf.panel === 'file-editor') {
+        document.dispatchEvent(new CustomEvent('acc:open-file-in-pane', {
+          detail: { leafId, filePath: dragState.filePath }
+        }))
+      } else {
+        const fileSide = (activeZone === 'right' || activeZone === 'bottom') ? 'after' : 'before'
+        insertLayout(tabId, leafId, direction, makeFileEditorLeaf(dragState.filePath), fileSide)
+      }
+    } else if (!activeZone) {
+      endDrag(); return
+    } else if (dragState.type === 'layout-leaf') {
       if (dragState.tabId === tabId) moveLayout(tabId, dragState.leafId, leafId, direction, side)
     } else if (dragState.type === 'sidebar-session') {
       insertSessionIntoLayout(tabId, leafId, dragState.sessionId, direction, side)
@@ -85,6 +100,7 @@ export function PaneDropTarget({ leafId, tabId, children }: Props): JSX.Element 
       if (existingLeafId) moveLayout(tabId, existingLeafId, leafId, direction, side)
       else insertLayout(tabId, leafId, direction, makeNotesLeaf(dragState.noteId), side)
     }
+
     endDrag()
   }, [dragState, activeZone, tabId, leafId, moveLayout, insertSessionIntoLayout, insertLayout, paneTree, endDrag])
 
@@ -93,10 +109,23 @@ export function PaneDropTarget({ leafId, tabId, children }: Props): JSX.Element 
       ref={paneRef}
       className="relative w-full h-full group"
       onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-
       {children}
+
+      {/* Drag handle — shown on pane hover, initiates pane rearrange */}
+      {!isDragging && (
+        <div
+          draggable
+          onDragStart={handleDragStart}
+          onDragEnd={() => endDrag()}
+          className="absolute top-1.5 right-1.5 z-10 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing p-1 rounded hover:bg-brand-panel/80 bg-brand-surface/60"
+          title="Drag to rearrange"
+        >
+          <GripHorizontal size={10} className="text-zinc-500" />
+        </div>
+      )}
 
       {/* Transparent overlay — blocks terminal canvas from eating drag events */}
       {isDragging && !isSource && (

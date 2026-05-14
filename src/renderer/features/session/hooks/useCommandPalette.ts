@@ -52,8 +52,9 @@ export function useCommandPalette(open: boolean, onClose: () => void, onShowShor
       }))
 
     const actions: PaletteItem[] = [
-      { id: 'new-session',    label: 'New Session',        description: hk.newSession,    iconName: 'Plus',        action: () => { document.dispatchEvent(new CustomEvent('acc:new-session'));  onClose() } },
-      { id: 'open-project',   label: 'Open Project',       description: hk.openProject,   iconName: 'FolderOpen',  action: () => { document.dispatchEvent(new CustomEvent('acc:open-project')); onClose() } },
+      { id: 'new-session',    label: 'New Session',        description: hk.newSession,    iconName: 'Plus',        action: () => { document.dispatchEvent(new CustomEvent('acc:new-session'));      onClose() } },
+      { id: 'open-file',      label: 'File Tree',          description: hk.openFileFinder, iconName: 'FolderTree', action: () => { document.dispatchEvent(new CustomEvent('acc:open-file-finder')); onClose() } },
+      { id: 'open-project',   label: 'Open Project',       description: hk.openProject,   iconName: 'FolderOpen',  action: () => { document.dispatchEvent(new CustomEvent('acc:open-project'));    onClose() } },
       { id: 'toggle-notes',   label: 'Toggle Notes',       description: hk.quickNote,     iconName: 'NotebookPen', action: () => { document.dispatchEvent(new CustomEvent('acc:quick-note'));   onClose() } },
       { id: 'show-shortcuts', label: 'Keyboard Shortcuts', description: hk.showShortcuts, iconName: 'Keyboard',    action: () => { onShowShortcuts?.(); onClose() } },
     ].filter((a) => !q || a.label.toLowerCase().includes(q))

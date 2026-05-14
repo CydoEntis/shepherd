@@ -4,6 +4,7 @@ import { IPC } from '@shared/ipc-channels'
 import { SCROLLBACK_BYTE_LIMIT } from '@shared/constants'
 import type { AgentStatus, SessionDataPayload } from '@shared/ipc-types'
 import { getShellIntegrationSequence } from './shell-integration'
+import type { AgentAdapter, ParseBuffer } from './agent-adapters'
 
 interface PtyOptions {
   sessionId: string
@@ -13,6 +14,7 @@ interface PtyOptions {
   cols: number
   rows: number
   skipShellIntegration?: boolean
+  agentAdapter?: AgentAdapter
   onCwdChange?: (cwd: string) => void
   onAgentStatus?: (status: AgentStatus) => void
   onConversationId?: (id: string) => void
@@ -33,28 +35,29 @@ const OSC94_DONE_RE = /\x1b\]9;4;[012](?:\x07|\x1b\\)/
 const OSC633_C_RE = /\x1b\]633;C(?:\x07|\x1b\\)/
 const OSC633_A_RE = /\x1b\]633;A(?:\x07|\x1b\\)/
 
+// OSC 133 — Semantic Prompts / Shell Integration (iTerm2, many CLI tools).
+// Equivalent semantics to OSC 633 but widely emitted by non-VS Code tooling.
+//   133;A → prompt mark (shell idle, showing prompt)
+//   133;C → command start (user submitted input, executing)
+//   133;D[;exitCode] → command done (before next 133;A)
+const OSC133_C_RE = /\x1b\]133;C(?:\x07|\x1b\\)/
+const OSC133_A_RE = /\x1b\]133;A(?:\x07|\x1b\\)/
+const OSC133_D_RE = /\x1b\]133;D(?:;\d+)?(?:\x07|\x1b\\)/
+
 // Regex fallback for Claude Code's own interactive output (Claude Code does not
 // emit OSC 633 — these fire for per-message status within a claude session).
-// \r*\r   — Windows spinner (CR + "*" + CR, repositioned by ANSI).
-// \n•\s   — U+2022 bullet Claude prefixes every response with.
-// esc to interrupt — shown in Claude Code's UI during tool execution.
-// NOTE: "thinking" was intentionally removed — it matches response body text
-// (e.g. "I was thinking about…") and caused the timer to reset mid-response,
-// making the spinner outlast the "> " prompt detection.
-const AGENT_RUNNING_RE = /\r[*]\r|\n•\s|esc to interrupt/
-
-// ※ (U+203B) — "※ Cogitated/Crunched/Pondered for Xs" — emitted after thinking.
+// Patterns cover both old UI (•, esc to interrupt) and Claude Code v2.x UI
+// (+ Verb…, Bash(…), Read(…), etc.).
+const AGENT_RUNNING_RE = /\r[*]\r|\n[•+] |esc to interrupt|Bash\(|Read\(|Write\(|Edit\(|Glob\(|Grep\(|Task\(/
 const AGENT_WRAP_UP_RE = /※/
+// The > prompt ends with cursor-repositioning sequences that ANSI_RE may not fully
+// strip, so we don't anchor to $ — just require "> " at the start of a line.
+const AGENT_PROMPT_RE = /(^|[\r\n])> /
 
-// Claude Code's input prompt "> " on its own line. Guarded by agentStatus === 'running'
-// so regular shell prompts don't false-fire.
-const AGENT_PROMPT_RE = /(^|[\r\n])>\s*$/
-
-// Strips ANSI escape sequences (CSI, DEC private mode, and OSC) so control codes
-// don't break pattern matching. OSC sequences (\x1b]...\x07 or \x1b]...\x1b\\)
-// must also be stripped — Claude Code emits window-title updates that would otherwise
-// sit in the plain buffer and block AGENT_PROMPT_RE from matching "> ".
-const ANSI_RE = /\x1b\[[\x3c-\x3f]?[0-9;]*[A-Za-z]|\x1b[()][AB012]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g
+// Strips ANSI escape sequences so control codes don't break pattern matching.
+// The trailing branch also catches single-character sequences like ESC= and ESC>
+// (application/normal keypad mode) that Claude Code emits after the > prompt.
+const ANSI_RE = /\x1b\[[\x3c-\x3f]?[0-9;]*[A-Za-z]|\x1b[()][AB012]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[^[\]()]/g
 
 // UUID v4 pattern — used to detect Claude conversation IDs from PTY output
 const UUID_V4_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i
@@ -72,15 +75,19 @@ export class PtyProcess {
   private agentStatus: AgentStatus = 'idle'
   private waitingTimer: ReturnType<typeof setTimeout> | null = null
   private idleTimer: ReturnType<typeof setTimeout> | null = null
+  private inactivityTimer: ReturnType<typeof setTimeout> | null = null
   private detectionBuffer = ''
   private cwdBuffer = ''
   private readonly isAgentSession: boolean
+  private readonly agentAdapter: AgentAdapter | undefined
+  private readonly adapterBuf: ParseBuffer = { partial: '' }
   readonly sessionId: string
   readonly subscriberIds = new Set<number>()
 
   constructor(opts: PtyOptions) {
     this.sessionId = opts.sessionId
     this.isAgentSession = !!opts.skipShellIntegration
+    this.agentAdapter = opts.agentAdapter
     this.onCwdChange = opts.onCwdChange
     this.onAgentStatus = opts.onAgentStatus
     this.onConversationId = opts.onConversationId
@@ -90,26 +97,58 @@ export class PtyProcess {
       cols: opts.cols,
       rows: opts.rows,
       cwd: opts.cwd,
-      env: { ...process.env }
+      // WT_SESSION signals to Claude Code (and other agents) that they are running
+      // inside a Windows Terminal-compatible host, which causes them to emit OSC 9;4
+      // progress sequences used for running/idle status detection.
+      env: { ...process.env, WT_SESSION: process.env.WT_SESSION ?? opts.sessionId }
     })
 
     this.pty.onData((data) => {
-      this.appendScrollback(data)
-      this.detectAgentStatus(data)
-      this.fanOut(data)
+      if (this.agentAdapter) {
+        // Try structured JSON path first. If the adapter emits status events the agent
+        // is running in JSON mode and the adapter owns both status and display.
+        // If no status events arrive (command was not modified, interactive mode),
+        // fall through to legacy OSC + regex detection so the terminal keeps working.
+        this.trackMetadata(data)
+        const events = this.agentAdapter.parseChunk(data, this.adapterBuf)
+        const hasStatus = events.some((e) => e.kind === 'status')
+        if (hasStatus) {
+          for (const ev of events) {
+            if (ev.kind === 'status') {
+              this.clearActivityTimers()
+              this.setAgentStatus(ev.status)
+              if (ev.status === 'waiting-input') {
+                this.idleTimer = setTimeout(() => this.setAgentStatus('idle'), 5_000)
+              }
+            } else if (ev.kind === 'display') {
+              this.storeScrollback(ev.content)
+              this.fanOut(ev.content)
+            }
+          }
+        } else {
+          // No JSON status — interactive mode. Use legacy detection; pass raw data through.
+          this.storeScrollback(data)
+          this.detectAgentStatus(data)
+          this.fanOut(data)
+        }
+        // Inactivity watchdog: reset on every chunk so silence → done transition works
+        // regardless of which path above ran. clearActivityTimers() cancels this.
+        this.resetInactivityTimer()
+      } else {
+        // Plain shell session — legacy OSC + regex detection.
+        this.appendScrollback(data)
+        this.detectAgentStatus(data)
+        this.fanOut(data)
+      }
     })
 
-    // Inject shell integration ~300 ms after the shell has initialised its
-    // RC files.  We do this here rather than in session-service so the PTY
-    // class owns the full lifecycle of the underlying process.
-    // Skip when an agentCommand is set — the shell immediately spawns claude,
-    // so the 300 ms timer fires while claude owns stdin and the script would
-    // be echoed as visible text instead of executed by the shell interpreter.
     const integrationSeq = opts.skipShellIntegration ? null : getShellIntegrationSequence(opts.command, process.platform)
     if (integrationSeq) {
+      // 600ms on Windows: PowerShell/pwsh startup is slower than Unix shells.
+      const integrationDelay = process.platform === 'win32' ? 600 : 300
       setTimeout(() => {
         try { this.pty.write(integrationSeq) } catch { /* pty may have exited already */ }
-      }, 300)
+      }, integrationDelay)
     }
   }
 
@@ -122,16 +161,79 @@ export class PtyProcess {
   private clearActivityTimers(): void {
     if (this.waitingTimer) { clearTimeout(this.waitingTimer); this.waitingTimer = null }
     if (this.idleTimer) { clearTimeout(this.idleTimer); this.idleTimer = null }
+    if (this.inactivityTimer) { clearTimeout(this.inactivityTimer); this.inactivityTimer = null }
+  }
+
+  // Resets the output-inactivity watchdog for agent sessions. If the agent goes
+  // quiet for 5 seconds while in running state, it's done — transition to waiting-input.
+  // This is the primary safety net when OSC 9;4;0 fails to fire (e.g. hook errors).
+  private resetInactivityTimer(): void {
+    if (this.agentStatus !== 'running') return
+    if (this.inactivityTimer) clearTimeout(this.inactivityTimer)
+    this.inactivityTimer = setTimeout(() => {
+      this.inactivityTimer = null
+      if (this.agentStatus === 'running') {
+        this.setAgentStatus('waiting-input')
+        this.idleTimer = setTimeout(() => { this.setAgentStatus('idle') }, 5_000)
+      }
+    }, 5_000)
+  }
+
+  // Extracts conversation ID and CWD from raw PTY data without storing to scrollback.
+  private trackMetadata(chunk: string): void {
+    const match = UUID_V4_RE.exec(chunk)
+    if (match && match[0] !== this.conversationId) {
+      this.scrollback = []
+      this.scrollbackBytes = 0
+      this.conversationId = match[0]
+      this.onConversationId?.(match[0])
+    }
+
+    const osc7 = OSC7_RE.exec(chunk)
+    if (osc7) {
+      try {
+        let cwd = decodeURIComponent(osc7[1])
+        if (process.platform === 'win32' && /^\/[A-Za-z]:/.test(cwd)) cwd = cwd.slice(1)
+        this.onCwdChange?.(cwd)
+      } catch { /* ignore malformed URI */ }
+      this.cwdBuffer = ''
+    } else {
+      this.cwdBuffer = (this.cwdBuffer + chunk.replace(ANSI_RE, '')).slice(-512)
+      const lines = this.cwdBuffer.split(/\r?\n/)
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const line = lines[i].trim()
+        const winMatch = /^([A-Za-z]:[^>]*)>$/.exec(line)
+        if (winMatch) { this.onCwdChange?.(winMatch[1]); this.cwdBuffer = ''; break }
+        const unixMatch = /^([/~][^$#]*)\s*[$#]$/.exec(line)
+        if (unixMatch) { this.onCwdChange?.(unixMatch[1].trim()); this.cwdBuffer = ''; break }
+      }
+    }
+  }
+
+  // Appends content to the scrollback ring buffer.
+  private storeScrollback(content: string): void {
+    const bytes = Buffer.byteLength(content, 'utf8')
+    this.scrollback.push(content)
+    this.scrollbackBytes += bytes
+    while (this.scrollbackBytes > SCROLLBACK_BYTE_LIMIT && this.scrollback.length > 1) {
+      const removed = this.scrollback.shift()!
+      this.scrollbackBytes -= Buffer.byteLength(removed, 'utf8')
+    }
+  }
+
+  private appendScrollback(chunk: string): void {
+    this.trackMetadata(chunk)
+    this.storeScrollback(chunk)
   }
 
   private detectAgentStatus(chunk: string): void {
     this.detectionBuffer = (this.detectionBuffer + chunk).slice(-600)
 
-    // OSC 9;4 — Claude Code emits this directly to signal progress state.
-    // Highest priority: no timer, direct signal from the AI tool itself.
-    // DONE is checked before WORKING: when both arrive in the same PTY chunk (fast
-    // single-turn responses), DONE is more recent and must win so we don't stay stuck
-    // in 'running' until the fallback timer fires.
+    // OSC 9;4 and OSC 633 signals are always checked for all session types.
+    // Regex-based detection (below) is only used for plain shell sessions —
+    // agent sessions (Claude Code v2.x+) have a persistent > input bar that
+    // makes prompt/running regexes unreliable. Those sessions use hooks + OSC exclusively.
+
     if (OSC94_DONE_RE.test(this.detectionBuffer)) {
       this.detectionBuffer = ''
       this.clearActivityTimers()
@@ -146,13 +248,10 @@ export class PtyProcess {
       return
     }
 
-    // OSC 633 — primary path, emitted by Orbit's shell integration injection.
-    // These are data-driven and fire with zero timer lag.
     if (OSC633_C_RE.test(this.detectionBuffer)) {
       this.detectionBuffer = ''
       this.clearActivityTimers()
       this.setAgentStatus('running')
-      // Safety net: if 633;A never arrives (very long command), fall back after 60s.
       this.waitingTimer = setTimeout(() => {
         this.setAgentStatus('waiting-input')
         this.idleTimer = setTimeout(() => { this.setAgentStatus('idle') }, 5_000)
@@ -168,12 +267,50 @@ export class PtyProcess {
       return
     }
 
-    // Regex fallback — for Claude Code's per-message status within a claude session
-    // (Claude Code does not emit OSC 633 itself).
-    const plain = this.detectionBuffer.replace(ANSI_RE, '')
+    if (OSC133_C_RE.test(this.detectionBuffer)) {
+      this.detectionBuffer = ''
+      this.clearActivityTimers()
+      this.setAgentStatus('running')
+      this.waitingTimer = setTimeout(() => {
+        this.setAgentStatus('waiting-input')
+        this.idleTimer = setTimeout(() => { this.setAgentStatus('idle') }, 5_000)
+      }, 60_000)
+      return
+    }
 
-    // Claude's prompt appearing while running = just finished. agentStatus guard
-    // prevents shell prompts from false-firing when not in a claude interaction.
+    if (OSC133_A_RE.test(this.detectionBuffer) || OSC133_D_RE.test(this.detectionBuffer)) {
+      this.detectionBuffer = ''
+      this.clearActivityTimers()
+      this.setAgentStatus('waiting-input')
+      this.idleTimer = setTimeout(() => { this.setAgentStatus('idle') }, 5_000)
+      return
+    }
+
+    // OSC fallback for agent sessions: ※ (wrap-up) and > prompt are Claude Code-specific
+    // markers reliable enough to use even when OSC 9;4 fails to fire (e.g. hook errors).
+    // Only checked when already running so the persistent > input bar doesn't false-fire.
+    const plain = this.detectionBuffer.replace(ANSI_RE, '')
+    if (this.agentStatus === 'running') {
+      if (AGENT_WRAP_UP_RE.test(plain)) {
+        this.detectionBuffer = ''
+        this.clearActivityTimers()
+        this.waitingTimer = setTimeout(() => {
+          this.setAgentStatus('waiting-input')
+          this.idleTimer = setTimeout(() => { this.setAgentStatus('idle') }, 5_000)
+        }, 1_000)
+        return
+      }
+      if (AGENT_PROMPT_RE.test(plain)) {
+        this.detectionBuffer = ''
+        this.clearActivityTimers()
+        this.setAgentStatus('waiting-input')
+        this.idleTimer = setTimeout(() => { this.setAgentStatus('idle') }, 5_000)
+        return
+      }
+    }
+
+    if (this.isAgentSession) return
+
     if (this.agentStatus === 'running' && AGENT_PROMPT_RE.test(plain)) {
       this.clearActivityTimers()
       this.detectionBuffer = ''
@@ -186,8 +323,6 @@ export class PtyProcess {
     const isWrappingUp = AGENT_WRAP_UP_RE.test(plain)
     if (!isRunning && !isWrappingUp) return
 
-    // Prompt already visible in this same chunk — skip the timer entirely.
-    // This fires when Claude finishes fast and the final bullet + "> " arrive together.
     if (AGENT_PROMPT_RE.test(plain)) {
       this.detectionBuffer = ''
       this.clearActivityTimers()
@@ -200,57 +335,11 @@ export class PtyProcess {
     this.setAgentStatus('running')
     this.clearActivityTimers()
 
-    // ※ wins over spinner — 1s fallback. Pure spinner/tool = 1.5s fallback.
-    // These are last-resort safety nets; AGENT_PROMPT_RE should fire first in normal flow.
     const waitMs = isWrappingUp ? 1_000 : 1_500
     this.waitingTimer = setTimeout(() => {
       this.setAgentStatus('waiting-input')
       this.idleTimer = setTimeout(() => { this.setAgentStatus('idle') }, 5_000)
     }, waitMs)
-  }
-
-  private appendScrollback(chunk: string): void {
-    // New Claude Code session detected — clear old scrollback before storing this chunk
-    // so replay doesn't show welcome screens from previous runs in the same shell.
-    const match = UUID_V4_RE.exec(chunk)
-    if (match && match[0] !== this.conversationId) {
-      this.scrollback = []
-      this.scrollbackBytes = 0
-      this.conversationId = match[0]
-      this.onConversationId?.(match[0])
-    }
-
-    const bytes = Buffer.byteLength(chunk, 'utf8')
-    this.scrollback.push(chunk)
-    this.scrollbackBytes += bytes
-
-    while (this.scrollbackBytes > SCROLLBACK_BYTE_LIMIT && this.scrollback.length > 1) {
-      const removed = this.scrollback.shift()!
-      this.scrollbackBytes -= Buffer.byteLength(removed, 'utf8')
-    }
-
-    const osc7 = OSC7_RE.exec(chunk)
-    if (osc7) {
-      try {
-        let cwd = decodeURIComponent(osc7[1])
-        if (process.platform === 'win32' && /^\/[A-Za-z]:/.test(cwd)) cwd = cwd.slice(1)
-        this.onCwdChange?.(cwd)
-      } catch { /* ignore malformed URI */ }
-      this.cwdBuffer = ''
-    } else {
-      // Fallback for CMD and other shells that don't emit OSC 7:
-      // detect prompt lines of the form "C:\path>" at the start of a line.
-      this.cwdBuffer = (this.cwdBuffer + chunk.replace(ANSI_RE, '')).slice(-512)
-      const lines = this.cwdBuffer.split(/\r?\n/)
-      for (let i = lines.length - 1; i >= 0; i--) {
-        const line = lines[i].trim()
-        // Match a bare Windows path prompt: "C:\something>" or Unix "~/path$" style
-        const winMatch = /^([A-Za-z]:[^>]*)>$/.exec(line)
-        if (winMatch) { this.onCwdChange?.(winMatch[1]); this.cwdBuffer = ''; break }
-        const unixMatch = /^([/~][^$#]*)\s*[$#]$/.exec(line)
-        if (unixMatch) { this.onCwdChange?.(unixMatch[1].trim()); this.cwdBuffer = ''; break }
-      }
-    }
   }
 
   getConversationId(): string | undefined {
@@ -282,14 +371,12 @@ export class PtyProcess {
   }
 
   injectOutput(data: string): void {
-    this.appendScrollback(data)
+    this.storeScrollback(data)
     this.fanOut(data)
   }
 
   write(data: string): void {
-    // For direct agent sessions: any Enter press → running (covers first message from idle).
-    // For shell sessions: only fire from waiting-input to avoid false spinners on normal commands.
-    if (/[\r\n]/.test(data) && (this.isAgentSession || this.agentStatus === 'waiting-input')) {
+    if (/[\r\n]/.test(data) && (this.isAgentSession || this.agentStatus !== 'running')) {
       this.clearActivityTimers()
       this.setAgentStatus('running')
     }
@@ -311,6 +398,7 @@ export class PtyProcess {
   kill(signal?: string): void {
     if (this.waitingTimer) clearTimeout(this.waitingTimer)
     if (this.idleTimer) clearTimeout(this.idleTimer)
+    if (this.inactivityTimer) clearTimeout(this.inactivityTimer)
     this.pty.kill(signal)
   }
 }

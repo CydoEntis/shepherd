@@ -1,5 +1,5 @@
 ﻿import { createPortal } from 'react-dom'
-import { Search, Terminal, Zap, Plus, FolderOpen, PanelLeft, X, Maximize2, NotebookPen } from 'lucide-react'
+import { Search, Terminal, Zap, Plus, FolderOpen, FolderTree, PanelLeft, X, Maximize2, NotebookPen, FileText } from 'lucide-react'
 import { useCommandPalette } from '../features/session/hooks/useCommandPalette'
 import { cn } from '../lib/utils'
 
@@ -12,6 +12,8 @@ const ICON_MAP: Record<string, JSX.Element> = {
   X:          <X size={12} />,
   Maximize2:    <Maximize2 size={12} />,
   NotebookPen:  <NotebookPen size={12} />,
+  FileText:     <FileText size={12} />,
+  FolderTree:   <FolderTree size={12} />,
 }
 
 interface Props {

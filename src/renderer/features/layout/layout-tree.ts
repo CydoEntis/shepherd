@@ -7,6 +7,7 @@ export type LayoutLeaf =
   | { type: 'leaf'; id: string; panel: 'notes'; noteId?: string }
   | { type: 'leaf'; id: string; panel: 'markdown-preview'; noteId: string }
   | { type: 'leaf'; id: string; panel: 'home' }
+  | { type: 'leaf'; id: string; panel: 'file-editor'; filePath: string }
 
 export type LayoutSplit = {
   type: 'split'
@@ -31,6 +32,10 @@ export function makeMarkdownPreviewLeaf(noteId: string): LayoutLeaf {
 
 export function makeHomeLeaf(): LayoutLeaf {
   return { type: 'leaf', id: makeId(), panel: 'home' }
+}
+
+export function makeFileEditorLeaf(filePath: string): LayoutLeaf {
+  return { type: 'leaf', id: makeId(), panel: 'file-editor', filePath }
 }
 
 export function replaceNode(tree: LayoutNode, targetId: string, replacement: LayoutNode): LayoutNode {

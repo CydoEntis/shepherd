@@ -2,6 +2,7 @@ import { useRef, useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { X, Columns2, Rows2, ExternalLink, Copy, Clipboard, Search, ChevronUp, ChevronDown } from 'lucide-react'
 import { useTerminal } from '../hooks/useTerminal'
+import { writeToSession } from '../../session/session.service'
 import { cn } from '../../../lib/utils'
 
 const CTX_ICONS: Record<string, JSX.Element> = {
@@ -30,6 +31,28 @@ export function TerminalPane({ sessionId, paneItems }: Props): JSX.Element {
   const searchInputRef = useRef<HTMLInputElement>(null)
   const { ctxMenu, dismissCtxMenu, search } = useTerminal(sessionId, containerRef)
   const [searchTerm, setSearchTerm] = useState('')
+  const [isDragOver, setIsDragOver] = useState(false)
+
+  const handleDragOver = (e: React.DragEvent): void => {
+    if (e.dataTransfer.types.includes('Files')) {
+      e.preventDefault()
+      setIsDragOver(true)
+    }
+  }
+
+  const handleDragLeave = (e: React.DragEvent): void => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDragOver(false)
+  }
+
+  const handleDrop = (e: React.DragEvent): void => {
+    e.preventDefault()
+    setIsDragOver(false)
+    const paths = Array.from(e.dataTransfer.files)
+      .map((f) => (f as unknown as { path: string }).path)
+      .filter(Boolean)
+    if (!paths.length) return
+    writeToSession({ sessionId, data: paths.map((p) => `@${p}`).join(' ') })
+  }
 
   useEffect(() => {
     if (search.visible) {
@@ -40,12 +63,22 @@ export function TerminalPane({ sessionId, paneItems }: Props): JSX.Element {
   }, [search.visible])
 
   return (
-    <div className="relative w-full h-full">
+    <div
+      className="relative w-full h-full"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       <div
         ref={containerRef}
         className="xterm-container"
         style={{ width: '100%', height: '100%', padding: '4px 8px' }}
       />
+      {isDragOver && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-brand-bg/70 border-2 border-dashed border-brand-accent/60 rounded pointer-events-none">
+          <span className="text-xs text-brand-accent font-medium">Drop to insert @reference</span>
+        </div>
+      )}
 
       {search.visible && (
         <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 bg-brand-surface border border-brand-panel/80 rounded-md shadow-xl px-2 py-1">

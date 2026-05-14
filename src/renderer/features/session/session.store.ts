@@ -59,6 +59,7 @@ export interface SessionSlice {
   detachedNoteIds: string[]
   addDetachedNoteId: (noteId: string) => void
   removeDetachedNoteId: (noteId: string) => void
+  resetRootPane: () => void
 
 }
 
@@ -482,6 +483,11 @@ export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', neve
   removeDetachedNoteId: (noteId) =>
     set((state) => {
       state.detachedNoteIds = state.detachedNoteIds.filter((id) => id !== noteId)
+    }),
+
+  resetRootPane: () =>
+    set((state) => {
+      state.paneTree['__root__'] = makeHomeLeaf() as LayoutNode
     }),
 
 })

@@ -1,5 +1,6 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useStore } from '../../../store/root.store'
+import { getUiState, setUiState } from '../../workspace/workspace.service'
 
 export interface OpenFile {
   path: string
@@ -15,42 +16,27 @@ export interface UseFileTabsReturn {
   handleCloseFile: (path: string) => void
 }
 
-const FILES_KEY = 'orbit:open-files'
-const ACTIVE_KEY = 'orbit:active-file'
-
-function loadFiles(): OpenFile[] {
-  try {
-    const raw = localStorage.getItem(FILES_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw) as OpenFile[]
-    // Restore without hasChanges — git status unknown at startup
-    return parsed.map((f) => ({ ...f, hasChanges: false }))
-  } catch {
-    return []
-  }
-}
-
-function loadActiveFile(): string | null {
-  try {
-    return localStorage.getItem(ACTIVE_KEY)
-  } catch {
-    return null
-  }
-}
-
 export function useFileTabs(): UseFileTabsReturn {
-  const [openFiles, setOpenFiles] = useState<OpenFile[]>(loadFiles)
-  const [activeFilePath, setActiveFilePath] = useState<string | null>(loadActiveFile)
+  const [openFiles, setOpenFiles] = useState<OpenFile[]>([])
+  const [activeFilePath, setActiveFilePath] = useState<string | null>(null)
+  const loaded = useRef(false)
 
   useEffect(() => {
-    try { localStorage.setItem(FILES_KEY, JSON.stringify(openFiles)) } catch {}
+    getUiState().then((state) => {
+      setOpenFiles(state.openFiles.map((f) => ({ ...f, hasChanges: false })))
+      setActiveFilePath(state.activeFilePath)
+      loaded.current = true
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!loaded.current) return
+    setUiState({ openFiles: openFiles.map(({ path, root }) => ({ path, root })) })
   }, [openFiles])
 
   useEffect(() => {
-    try {
-      if (activeFilePath) localStorage.setItem(ACTIVE_KEY, activeFilePath)
-      else localStorage.removeItem(ACTIVE_KEY)
-    } catch {}
+    if (!loaded.current) return
+    setUiState({ activeFilePath })
   }, [activeFilePath])
 
   const handleFileClick = useCallback((path: string, xy: string | undefined): void => {
