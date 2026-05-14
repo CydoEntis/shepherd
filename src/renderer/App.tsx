@@ -266,6 +266,7 @@ export function App(): JSX.Element {
   const sessions = useStore((s) => s.sessions)
   const appTheme = useStore((s) => s.settings.theme)
   const storeActiveSessionId = useStore((s) => s.activeSessionId)
+  const isRestoringLayout = useStore((s) => s.isRestoringLayout)
   const windowHighlighted = useStore((s) => s.windowHighlighted)
   const windowColor = useStore((s) => s.windowColor)
 
@@ -285,6 +286,7 @@ export function App(): JSX.Element {
   const [openInMenuOpen, setOpenInMenuOpen] = useState(false)
   const [activeNoteId, setActiveNoteId] = useState<string | null>(null)
   const [workspaceSessionId, setWorkspaceSessionId] = useState<string | null>('__root__')
+  const wasRestoringRef = useRef(false)
 
   useEffect(() => {
     if (workspaceSessionId && workspaceSessionId !== '__root__' && !paneTree[workspaceSessionId]) {
@@ -354,9 +356,13 @@ export function App(): JSX.Element {
   }, [patchNoteContent])
 
   useEffect(() => {
+    // During layout restore, don't jump workspaceSessionId — it would show a random
+    // workspace's terminal. After restore completes, skip the first fire so the restored
+    // activeSessionId (last restored tab) doesn't override the home screen.
+    if (isRestoringLayout) { wasRestoringRef.current = true; return }
+    if (wasRestoringRef.current) { wasRestoringRef.current = false; return }
     setWorkspaceSessionId(storeActiveSessionId ?? '__root__')
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storeActiveSessionId])
+  }, [storeActiveSessionId, isRestoringLayout])
 
   const handleWorkspaceChange = useCallback((id: string) => {
     setActiveWorkspaceId(id)

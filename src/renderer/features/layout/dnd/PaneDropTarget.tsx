@@ -80,14 +80,17 @@ export function PaneDropTarget({ leafId, tabId, children }: Props): JSX.Element 
     const side = (activeZone === 'right' || activeZone === 'bottom') ? 'after' : 'before'
 
     if (dragState.type === 'file-path') {
-      const targetLeaf = tree ? findLeafById(tree, leafId) : null
-      if (targetLeaf?.type === 'leaf' && targetLeaf.panel === 'file-editor') {
-        document.dispatchEvent(new CustomEvent('acc:open-file-in-pane', {
-          detail: { leafId, filePath: dragState.filePath }
-        }))
-      } else {
-        const fileSide = (activeZone === 'right' || activeZone === 'bottom') ? 'after' : 'before'
-        insertLayout(tabId, leafId, direction, makeFileEditorLeaf(dragState.filePath), fileSide)
+      // Never insert file editors into '__root__' — that corrupts workspace navigation
+      if (tabId !== '__root__') {
+        const targetLeaf = tree ? findLeafById(tree, leafId) : null
+        if (targetLeaf?.type === 'leaf' && targetLeaf.panel === 'file-editor') {
+          document.dispatchEvent(new CustomEvent('acc:open-file-in-pane', {
+            detail: { leafId, filePath: dragState.filePath }
+          }))
+        } else {
+          const fileSide = (activeZone === 'right' || activeZone === 'bottom') ? 'after' : 'before'
+          insertLayout(tabId, leafId, direction, makeFileEditorLeaf(dragState.filePath), fileSide)
+        }
       }
     } else if (!activeZone) {
       endDrag(); return
