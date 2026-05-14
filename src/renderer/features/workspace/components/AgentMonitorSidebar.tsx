@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
-import { Plus, ChevronDown, ChevronRight, FolderOpen, FolderTree, X, Users, FileText, GripVertical } from 'lucide-react'
+import { Plus, ChevronDown, ChevronRight, FolderOpen, FolderTree, X, Users, FileText } from 'lucide-react'
 import { useStore } from '../../../store/root.store'
 import { patchSession, killSession } from '../../session/session.service'
 import { EditSessionModal } from '../../session/components/EditSessionModal'
@@ -260,13 +260,12 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
             onDragEnd={() => endDrag()}
             onClick={() => setFocusedLeaf(leafId)}
             className={cn(
-              'flex items-center gap-1.5 px-2 py-1.5 mx-1 rounded cursor-pointer select-none group transition-colors',
+              'flex items-center gap-1.5 px-2 py-1.5 mx-1 rounded select-none group transition-colors cursor-grab active:cursor-grabbing',
               isActive
                 ? 'bg-brand-panel/70 text-zinc-200'
                 : 'text-zinc-500 hover:text-zinc-300 hover:bg-brand-panel/40'
             )}
           >
-            <GripVertical size={10} className="flex-shrink-0 text-zinc-700 group-hover:text-zinc-600 cursor-grab" />
             <FileText size={11} className={cn('flex-shrink-0', isActive ? 'text-brand-accent/80' : 'text-zinc-600')} />
             <span className="flex-1 min-w-0 truncate text-[11px]">
               {stem}

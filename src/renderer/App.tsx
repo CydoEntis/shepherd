@@ -31,7 +31,7 @@ import { TERMINAL_THEME_LIST } from './features/terminal/hooks/useTerminal'
 import { setWindowMeta } from './features/window/window.service'
 import { useInstalledEditors } from './features/fs/hooks/useInstalledEditors'
 import { openInEditor } from './features/fs/fs.service'
-import { createWorkspace, deleteWorkspace } from './features/workspace/workspace.service'
+import { createWorkspace, deleteWorkspace, getUiState, setUiState } from './features/workspace/workspace.service'
 import { NewWorkspaceModal } from './features/workspace/components/NewWorkspaceModal'
 import { NotificationBell } from './features/notifications/components/NotificationBell'
 import { openNoteInEditor } from './features/notes/notes.service'
@@ -287,6 +287,7 @@ export function App(): JSX.Element {
   const [activeNoteId, setActiveNoteId] = useState<string | null>(null)
   const [workspaceSessionId, setWorkspaceSessionId] = useState<string | null>('__root__')
   const wasRestoringRef = useRef(false)
+  const restoredWorkspaceRef = useRef(false)
 
   useEffect(() => {
     if (workspaceSessionId && workspaceSessionId !== '__root__' && !paneTree[workspaceSessionId]) {
@@ -364,10 +365,22 @@ export function App(): JSX.Element {
     setWorkspaceSessionId(storeActiveSessionId ?? '__root__')
   }, [storeActiveSessionId, isRestoringLayout])
 
+  // Restore last active workspace once the workspace list loads
+  useEffect(() => {
+    if (workspaces.length === 0 || restoredWorkspaceRef.current) return
+    restoredWorkspaceRef.current = true
+    getUiState().then((uiState) => {
+      if (uiState.activeWorkspaceId && workspaces.some((w) => w.id === uiState.activeWorkspaceId)) {
+        setActiveWorkspaceId(uiState.activeWorkspaceId)
+      }
+    })
+  }, [workspaces, setActiveWorkspaceId])
+
   const handleWorkspaceChange = useCallback((id: string) => {
     setActiveWorkspaceId(id)
     setWorkspaceSessionId('__root__')
     resetRootPane()
+    void setUiState({ activeWorkspaceId: id })
   }, [setActiveWorkspaceId, resetRootPane])
 
   useTheme(appTheme)

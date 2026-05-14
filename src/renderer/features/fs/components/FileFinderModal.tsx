@@ -4,7 +4,7 @@ import { Search, X, FileText, FolderOpen, FilePlus2, FolderPlus } from 'lucide-r
 import { findFiles, copyFile } from '../fs.service'
 import { FileTree } from './FileTree'
 import { useStore } from '../../../store/root.store'
-import { makeFileEditorLeaf, findLeafById } from '../../layout/layout-tree'
+import { makeFileEditorLeaf } from '../../layout/layout-tree'
 import { cn, normalizePath } from '../../../lib/utils'
 
 interface Props {
@@ -94,26 +94,20 @@ export function FileFinderModal({ open, rootPath, activeTabId, onClose }: Props)
 
   const openFile = useCallback((filePath: string) => {
     const state = useStore.getState()
-    // Use the workspace's active tab (workspaceSessionId from App.tsx) as the target.
-    // Fall back to store.activeSessionId, then '__root__' as last resort.
     const tabId = (activeTabId && state.paneTree[activeTabId])
       ? activeTabId
       : (state.activeSessionId && state.paneTree[state.activeSessionId] ? state.activeSessionId : '__root__')
     const currentTree = state.paneTree[tabId]
     if (!currentTree) return
 
-    const sendToPane = (leafId: string): void => {
-      document.dispatchEvent(new CustomEvent('acc:open-file-in-pane', { detail: { leafId, filePath } }))
+    // Replace the home leaf if that's the only pane (nothing open yet)
+    if (currentTree.type === 'leaf' && currentTree.panel === 'home') {
+      state.replaceLayoutLeaf(tabId, currentTree.id, makeFileEditorLeaf(filePath))
+      onCloseRef.current()
+      return
     }
 
-    if (state.focusedLeafId) {
-      const focused = findLeafById(currentTree, state.focusedLeafId)
-      if (focused?.type === 'leaf' && focused.panel === 'file-editor') { sendToPane(state.focusedLeafId); onCloseRef.current(); return }
-    }
-    if (currentTree.type === 'leaf' && currentTree.panel === 'file-editor') { sendToPane(currentTree.id); onCloseRef.current(); return }
-    if (currentTree.type === 'leaf' && currentTree.panel === 'home') {
-      state.replaceLayoutLeaf(tabId, currentTree.id, makeFileEditorLeaf(filePath)); onCloseRef.current(); return
-    }
+    // Always open in a new split so multiple files can be open side by side
     state.insertLayoutAtRight(tabId, makeFileEditorLeaf(filePath))
     onCloseRef.current()
   }, [activeTabId])

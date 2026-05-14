@@ -25,6 +25,7 @@ export type PersistedOpenFile = z.infer<typeof PersistedOpenFileSchema>
 export const UiStateSchema = z.object({
   openFiles: z.array(PersistedOpenFileSchema).default([]),
   activeFilePath: z.string().nullable().default(null),
+  activeWorkspaceId: z.string().default(ROOT_WORKSPACE_ID),
 })
 export type UiState = z.infer<typeof UiStateSchema>
 
