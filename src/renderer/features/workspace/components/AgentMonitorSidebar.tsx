@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
-import { Plus, ChevronDown, ChevronRight, FolderOpen, FolderTree, X, Users } from 'lucide-react'
+import { Plus, ChevronDown, ChevronRight, FolderOpen, FolderTree, X, Users, FileText, GripVertical } from 'lucide-react'
 import { useStore } from '../../../store/root.store'
 import { patchSession, killSession } from '../../session/session.service'
 import { EditSessionModal } from '../../session/components/EditSessionModal'
@@ -9,7 +9,8 @@ import { createWorkspace, deleteWorkspace } from '../workspace.service'
 import { detachTab, reattachTab, moveToWindow } from '../../window/window.service'
 import { NewWorkspaceModal } from './NewWorkspaceModal'
 import { shortPath } from '../../../lib/utils'
-import { findTabForSession, collectSessionIds, makeFileEditorLeaf } from '../../layout/layout-tree'
+import { findTabForSession, collectSessionIds, makeFileEditorLeaf, collectFileEditorLeaves } from '../../layout/layout-tree'
+import { useLayoutDnd } from '../../layout/dnd/LayoutDndContext'
 import { useWorktreeStats } from '../hooks/useWorktreeStats'
 import { useConfirmClose } from '../../session/hooks/useConfirmClose'
 import { toast } from 'sonner'
@@ -49,6 +50,13 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
   const workspaces = useStore((s) => s.workspaces)
   const addWorkspace = useStore((s) => s.addWorkspace)
   const removeWorkspaceFromStore = useStore((s) => s.removeWorkspaceFromStore)
+
+  const focusedLeafId = useStore((s) => s.focusedLeafId)
+  const setFocusedLeaf = useStore((s) => s.setFocusedLeaf)
+  const removeLayoutLeaf = useStore((s) => s.removeLayoutLeaf)
+  const { startDrag, endDrag } = useLayoutDnd()
+  const ghostRef = useRef<HTMLImageElement | null>(null)
+  const GHOST_SRC = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
 
   const { requestClose, modal: closeModal } = useConfirmClose()
 
@@ -219,6 +227,61 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
     if (tree && collectSessionIds(tree).includes(focusedSessionId)) return focusedSessionId
     return activeSessionId
   }, [activeSessionId, focusedSessionId, paneTree])
+
+  const openFiles = useMemo(() => {
+    if (!activeSessionId || activeSessionId === '__root__') return []
+    const tree = paneTree[activeSessionId]
+    return tree ? collectFileEditorLeaves(tree) : []
+  }, [activeSessionId, paneTree])
+
+  const openFilesSection = openFiles.length === 0 ? null : (
+    <div className="flex-shrink-0 border-t border-brand-panel/40 py-1">
+      <div className="px-3 py-1 text-[10px] text-zinc-600 uppercase tracking-wider font-semibold select-none">
+        Open Files
+      </div>
+      {openFiles.map(({ leafId, filePath }) => {
+        const name = filePath.replace(/\\/g, '/').split('/').pop() ?? filePath
+        const ext = name.includes('.') ? name.split('.').pop()?.toLowerCase() ?? '' : ''
+        const stem = ext ? name.slice(0, name.length - ext.length - 1) : name
+        const isActive = leafId === focusedLeafId
+        return (
+          <div
+            key={leafId}
+            draggable
+            onDragStart={(e) => {
+              if (!ghostRef.current) {
+                const img = new Image(); img.src = GHOST_SRC; ghostRef.current = img
+              }
+              e.dataTransfer.setDragImage(ghostRef.current, 0, 0)
+              e.dataTransfer.effectAllowed = 'move'
+              if (activeSessionId) startDrag({ type: 'layout-leaf', leafId, tabId: activeSessionId })
+            }}
+            onDragEnd={() => endDrag()}
+            onClick={() => setFocusedLeaf(leafId)}
+            className={cn(
+              'flex items-center gap-1.5 px-2 py-1.5 mx-1 rounded cursor-pointer select-none group transition-colors',
+              isActive
+                ? 'bg-brand-panel/70 text-zinc-200'
+                : 'text-zinc-500 hover:text-zinc-300 hover:bg-brand-panel/40'
+            )}
+          >
+            <GripVertical size={10} className="flex-shrink-0 text-zinc-700 group-hover:text-zinc-600 cursor-grab" />
+            <FileText size={11} className={cn('flex-shrink-0', isActive ? 'text-brand-accent/80' : 'text-zinc-600')} />
+            <span className="flex-1 min-w-0 truncate text-[11px]">
+              {stem}
+              {ext && <span className={isActive ? 'text-zinc-500' : 'text-zinc-700'}>.{ext}</span>}
+            </span>
+            <button
+              onClick={(e) => { e.stopPropagation(); if (activeSessionId) removeLayoutLeaf(activeSessionId, leafId) }}
+              className="flex-shrink-0 opacity-0 group-hover:opacity-100 p-0.5 rounded text-zinc-600 hover:text-zinc-300 transition-colors"
+            >
+              <X size={10} />
+            </button>
+          </div>
+        )
+      })}
+    </div>
+  )
 
   const handleSessionSelect = useCallback((sessionId: string): void => {
     const tabId = findTabForSession(paneTree, sessionId)
@@ -469,6 +532,7 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
           <div className="flex flex-col flex-1 min-h-0">
             <div className="flex-1 overflow-y-auto min-h-0 py-1">
               {sessionListContent}
+              {openFilesSection}
             </div>
             <div className="flex-shrink-0 flex gap-1.5 p-2 border-t border-brand-panel/40">
               <button
@@ -490,6 +554,7 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
           <div className="flex flex-col flex-1 min-h-0">
             <div className="flex-1 overflow-y-auto min-h-0 py-1">
               {sessionListContent}
+              {openFilesSection}
             </div>
             <div className="flex-shrink-0 p-2 border-t border-brand-panel/40">
               <button

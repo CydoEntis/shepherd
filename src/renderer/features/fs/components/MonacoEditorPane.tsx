@@ -1,15 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import Editor from '@monaco-editor/react'
-import { Save, X, ChevronRight, FileText } from 'lucide-react'
+import { Save, ChevronRight } from 'lucide-react'
 import { readFile, writeFile, showInFolder, openInEditor } from '../fs.service'
 import { useInstalledEditors } from '../hooks/useInstalledEditors'
 import { useStore } from '../../../store/root.store'
-import { useLayoutDnd } from '../../layout/dnd/LayoutDndContext'
 import { cn } from '../../../lib/utils'
 import { toast } from 'sonner'
-
-const GHOST_SRC = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
 
 function extToLang(filePath: string): string {
   const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
@@ -32,12 +29,6 @@ const MONACO_THEMES = [
 ] as const
 
 type MonacoThemeId = typeof MONACO_THEMES[number]['id']
-
-interface TabState {
-  path: string
-  content: string | null
-  dirty: boolean
-}
 
 function CtxSubMenu({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
   const [open, setOpen] = useState(false)
@@ -63,74 +54,45 @@ interface Props {
 }
 
 export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Element {
-  const [tabs, setTabs] = useState<TabState[]>([{ path: filePath, content: null, dirty: false }])
-  const [activeIdx, setActiveIdx] = useState(0)
+  const [currentPath, setCurrentPath] = useState(filePath)
+  const [content, setContent] = useState<string | null>(null)
+  const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
-  const [tabCtxMenu, setTabCtxMenu] = useState<{ x: number; y: number; idx: number } | null>(null)
   const [monacoThemeOverride, setMonacoThemeOverride] = useState<MonacoThemeId | null>(null)
   const removeLayoutLeaf = useStore((s) => s.removeLayoutLeaf)
   const theme = useStore((s) => s.settings.theme)
   const editors = useInstalledEditors()
-  const { startDrag, endDrag } = useLayoutDnd()
-  const ghostRef = useRef<HTMLImageElement | null>(null)
   const ctxRef = useRef<HTMLDivElement>(null)
-  const tabCtxRef = useRef<HTMLDivElement>(null)
 
   const autoTheme: MonacoThemeId = theme === 'light' ? 'vs' : 'vs-dark'
   const monacoTheme = monacoThemeOverride ?? autoTheme
-  const activeTab = tabs[activeIdx] ?? tabs[0]
-  const tabPaths = tabs.map((t) => t.path).join('\0')
 
-  // Load content for active tab when not yet loaded
+  // Load file content when path changes
   useEffect(() => {
-    const tab = tabs[activeIdx]
-    if (!tab || tab.content !== null) return
-    const idx = activeIdx
-    readFile(tab.path).then((text) => {
-      setTabs((prev) => prev.map((t, i) => (i === idx ? { ...t, content: text ?? '' } : t)))
-    })
-    // tabPaths covers "new tab added at activeIdx" scenario
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeIdx, tabPaths])
+    setContent(null)
+    setDirty(false)
+    readFile(currentPath).then((text) => setContent(text ?? ''))
+  }, [currentPath])
 
-  // Listen for open-file-in-pane events
+  // Switch file when file-finder / file-tree targets this pane
   useEffect(() => {
     const handler = (e: Event): void => {
       const { leafId: targetId, filePath: newPath } = (e as CustomEvent<{ leafId: string; filePath: string }>).detail
       if (targetId !== leafId) return
-      setTabs((prev) => {
-        const existing = prev.findIndex((t) => t.path === newPath)
-        if (existing !== -1) { setActiveIdx(existing); return prev }
-        const next = [...prev, { path: newPath, content: null, dirty: false }]
-        setActiveIdx(next.length - 1)
-        return next
-      })
+      setCurrentPath(newPath)
     }
     document.addEventListener('acc:open-file-in-pane', handler)
     return () => document.removeEventListener('acc:open-file-in-pane', handler)
   }, [leafId])
 
-  // Close context menus on outside click
-  useEffect(() => {
-    if (!ctxMenu && !tabCtxMenu) return
-    const handler = (e: MouseEvent): void => {
-      if (ctxRef.current && !ctxRef.current.contains(e.target as Node)) setCtxMenu(null)
-      if (tabCtxRef.current && !tabCtxRef.current.contains(e.target as Node)) setTabCtxMenu(null)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [ctxMenu, tabCtxMenu])
-
   const handleSave = async (): Promise<void> => {
-    const tab = tabs[activeIdx]
-    if (!tab || tab.content === null || saving) return
-    const idx = activeIdx
-    const name = tab.path.replace(/\\/g, '/').split('/').pop() ?? 'file'
+    if (content === null || saving) return
+    const name = currentPath.replace(/\\/g, '/').split('/').pop() ?? 'file'
     setSaving(true)
     try {
-      await writeFile(tab.path, tab.content)
-      setTabs((prev) => prev.map((t, i) => (i === idx ? { ...t, dirty: false } : t)))
+      await writeFile(currentPath, content)
+      setDirty(false)
       toast.success(`Saved ${name}`)
     } catch {
       toast.error(`Failed to save ${name}`)
@@ -142,110 +104,49 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
   const handleSaveRef = useRef(handleSave)
   useEffect(() => { handleSaveRef.current = handleSave })
 
-  const closeTab = (idx: number): void => {
-    if (tabs.length === 1) { removeLayoutLeaf(tabId, leafId); return }
-    const newIdx = idx < activeIdx ? activeIdx - 1 : idx === activeIdx ? Math.max(0, activeIdx - 1) : activeIdx
-    setActiveIdx(newIdx)
-    setTabs((prev) => prev.filter((_, i) => i !== idx))
-  }
-
-  const closeOthers = (idx: number): void => {
-    setTabs([tabs[idx]])
-    setActiveIdx(0)
-  }
-
-  const closeToLeft = (idx: number): void => {
-    if (idx === 0) return
-    setTabs((prev) => prev.slice(idx))
-    setActiveIdx(0)
-  }
-
-  const closeToRight = (idx: number): void => {
-    if (idx === tabs.length - 1) return
-    setTabs((prev) => prev.slice(0, idx + 1))
-    setActiveIdx((prev) => Math.min(prev, idx))
-  }
+  // Close context menu on outside click
+  useEffect(() => {
+    if (!ctxMenu) return
+    const handler = (e: MouseEvent): void => {
+      if (ctxRef.current && !ctxRef.current.contains(e.target as Node)) setCtxMenu(null)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [ctxMenu])
 
   const ctxX = ctxMenu ? Math.min(ctxMenu.x, window.innerWidth - 200) : 0
   const ctxY = ctxMenu ? Math.min(ctxMenu.y, window.innerHeight - 240) : 0
-  const tabCtxX = tabCtxMenu ? Math.min(tabCtxMenu.x, window.innerWidth - 180) : 0
-  const tabCtxY = tabCtxMenu ? Math.min(tabCtxMenu.y, window.innerHeight - 200) : 0
 
   return (
-    <div className="flex flex-row w-full h-full bg-brand-bg">
-      {/* Vertical file tab list */}
-      <div
-        className="flex-shrink-0 w-36 flex flex-col border-r border-brand-panel/40 bg-brand-surface overflow-y-auto"
-        onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }) }}
-      >
-        {tabs.map((tab, idx) => {
-          const name = tab.path.replace(/\\/g, '/').split('/').pop() ?? tab.path
-          const ext = name.includes('.') ? name.split('.').pop()?.toLowerCase() ?? '' : ''
-          const isActive = idx === activeIdx
-          return (
-            <div
-              key={tab.path}
-              draggable
-              onDragStart={(e) => {
-                if (!ghostRef.current) {
-                  const img = new Image(); img.src = GHOST_SRC; ghostRef.current = img
-                }
-                e.dataTransfer.setDragImage(ghostRef.current, 0, 0)
-                e.dataTransfer.effectAllowed = 'copy'
-                e.dataTransfer.setData('text/plain', tab.path)
-                startDrag({ type: 'file-path', filePath: tab.path })
-                document.dispatchEvent(new CustomEvent('acc:file-drag-start'))
-              }}
-              onDragEnd={() => endDrag()}
-              onClick={() => setActiveIdx(idx)}
-              onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setTabCtxMenu({ x: e.clientX, y: e.clientY, idx }) }}
-              className={cn(
-                'flex items-center gap-1.5 px-2 py-2 text-xs cursor-pointer border-b border-brand-panel/20 select-none group',
-                isActive
-                  ? 'text-zinc-200 bg-brand-bg border-l-2 border-l-brand-accent pl-[6px]'
-                  : 'text-zinc-500 hover:text-zinc-300 hover:bg-brand-panel/30 border-l-2 border-l-transparent pl-[6px]'
-              )}
-            >
-              <FileText size={11} className={cn('flex-shrink-0', isActive ? 'text-brand-accent/70' : 'text-zinc-600')} />
-              <span className={cn('flex-1 min-w-0 truncate leading-tight', tab.dirty && 'italic')}>
-                {name.slice(0, name.length - (ext ? ext.length + 1 : 0))}
-                {ext && <span className={cn('ml-0.5', isActive ? 'text-zinc-500' : 'text-zinc-700')}>.{ext}</span>}
-                {tab.dirty && <span className="ml-0.5 text-brand-accent">•</span>}
-              </span>
-              <button
-                onClick={(e) => { e.stopPropagation(); closeTab(idx) }}
-                className="flex-shrink-0 opacity-0 group-hover:opacity-100 rounded p-0.5 text-zinc-600 hover:text-zinc-300 transition-colors"
-              >
-                <X size={10} />
-              </button>
-            </div>
-          )
-        })}
-      </div>
+    <div
+      className="flex flex-col w-full h-full bg-brand-bg"
+      onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }) }}
+    >
+      {/* Save bar — only visible when dirty */}
+      {dirty && (
+        <div className="flex-shrink-0 flex items-center gap-2 px-3 py-1 border-b border-brand-panel/60 bg-brand-surface">
+          <span className="text-[10px] text-zinc-500 truncate flex-1 min-w-0">
+            {currentPath.replace(/\\/g, '/').split('/').pop()}
+          </span>
+          <button
+            onClick={() => void handleSave()}
+            disabled={saving}
+            className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-brand-accent/20 text-brand-accent hover:bg-brand-accent/30 transition-colors disabled:opacity-40 flex-shrink-0"
+          >
+            <Save size={10} />{saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      )}
 
-      {/* Editor area */}
-      <div className="flex-1 min-w-0 flex flex-col">
-        {activeTab?.dirty && (
-          <div className="flex-shrink-0 flex items-center justify-end gap-2 px-2 py-1 border-b border-brand-panel/60 bg-brand-surface">
-            <span className="text-[10px] text-zinc-600 truncate flex-1 min-w-0">{activeTab.path.replace(/\\/g, '/').split('/').pop()}</span>
-            <button
-              onClick={() => void handleSave()}
-              disabled={saving}
-              className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-brand-accent/20 text-brand-accent hover:bg-brand-accent/30 transition-colors disabled:opacity-40 flex-shrink-0"
-            >
-              <Save size={10} />{saving ? 'Saving…' : 'Save'}
-            </button>
-          </div>
-        )}
-        {/* Editor */}
-        <div className="flex-1 min-h-0 min-w-0">
-        {!activeTab || activeTab.content === null ? (
+      {/* Editor */}
+      <div className="flex-1 min-h-0">
+        {content === null ? (
           <div className="flex items-center justify-center h-full text-xs text-zinc-600">Loading…</div>
         ) : (
           <Editor
-            key={activeTab.path}
-            value={activeTab.content}
-            language={extToLang(activeTab.path)}
+            key={currentPath}
+            value={content}
+            language={extToLang(currentPath)}
             theme={monacoTheme}
             onMount={(editor, monaco) => {
               editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => void handleSaveRef.current())
@@ -261,53 +162,13 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
               folding: true,
             }}
             onChange={(val) => {
-              if (val !== undefined) {
-                const idx = activeIdx
-                setTabs((prev) => prev.map((t, i) => (i === idx ? { ...t, content: val, dirty: true } : t)))
-              }
+              if (val !== undefined) { setContent(val); setDirty(true) }
             }}
           />
         )}
-        </div>
       </div>
 
-      {/* Tab right-click menu */}
-      {tabCtxMenu && createPortal(
-        <div
-          ref={tabCtxRef}
-          style={{ position: 'fixed', top: tabCtxY, left: tabCtxX, zIndex: 9999 }}
-          className="bg-brand-surface border border-brand-panel/60 rounded-md shadow-2xl py-1 w-44"
-          onContextMenu={(e) => e.preventDefault()}
-        >
-          <button onClick={() => { closeTab(tabCtxMenu.idx); setTabCtxMenu(null) }}
-            className="w-full flex items-center px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors text-left">
-            Close
-          </button>
-          <button onClick={() => { closeOthers(tabCtxMenu.idx); setTabCtxMenu(null) }}
-            disabled={tabs.length <= 1}
-            className="w-full flex items-center px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors text-left disabled:opacity-40 disabled:cursor-default">
-            Close Others
-          </button>
-          <button onClick={() => { closeToLeft(tabCtxMenu.idx); setTabCtxMenu(null) }}
-            disabled={tabCtxMenu.idx === 0}
-            className="w-full flex items-center px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors text-left disabled:opacity-40 disabled:cursor-default">
-            Close to Left
-          </button>
-          <button onClick={() => { closeToRight(tabCtxMenu.idx); setTabCtxMenu(null) }}
-            disabled={tabCtxMenu.idx === tabs.length - 1}
-            className="w-full flex items-center px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors text-left disabled:opacity-40 disabled:cursor-default">
-            Close to Right
-          </button>
-          <div className="h-px bg-brand-panel my-1" />
-          <button onClick={() => { removeLayoutLeaf(tabId, leafId); setTabCtxMenu(null) }}
-            className="w-full flex items-center px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors text-left">
-            Close All
-          </button>
-        </div>,
-        document.body
-      )}
-
-      {/* Tab bar right-click (empty area) → file actions */}
+      {/* Right-click context menu */}
       {ctxMenu && createPortal(
         <div
           ref={ctxRef}
@@ -317,14 +178,14 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
         >
           <button
             onClick={() => { void handleSave(); setCtxMenu(null) }}
-            disabled={!activeTab?.dirty}
+            disabled={!dirty}
             className="w-full flex items-center px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors text-left disabled:opacity-40 disabled:cursor-default"
           >
             Save
           </button>
           <div className="h-px bg-brand-panel my-1" />
           <button
-            onClick={() => { if (activeTab) showInFolder(activeTab.path).catch(() => {}); setCtxMenu(null) }}
+            onClick={() => { showInFolder(currentPath).catch(() => {}); setCtxMenu(null) }}
             className="w-full flex items-center px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors text-left"
           >
             Reveal in Explorer
@@ -334,7 +195,7 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
               {editors.map((ed) => (
                 <button
                   key={ed.command}
-                  onClick={() => { if (activeTab) openInEditor(ed.command, activeTab.path).catch(() => {}); setCtxMenu(null) }}
+                  onClick={() => { openInEditor(ed.command, currentPath).catch(() => {}); setCtxMenu(null) }}
                   className="w-full flex items-center px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors text-left"
                 >
                   {ed.name}

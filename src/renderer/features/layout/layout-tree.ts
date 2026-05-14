@@ -150,6 +150,15 @@ export function collectSessionIds(node: LayoutNode): string[] {
   return node.children.flatMap(collectSessionIds)
 }
 
+export type FileEditorLeafInfo = { leafId: string; filePath: string }
+
+export function collectFileEditorLeaves(node: LayoutNode): FileEditorLeafInfo[] {
+  if (node.type === 'leaf') {
+    return node.panel === 'file-editor' ? [{ leafId: node.id, filePath: node.filePath }] : []
+  }
+  return node.children.flatMap(collectFileEditorLeaves)
+}
+
 export function findTabForSession(
   layoutTree: Record<string, LayoutNode>,
   sessionId: string
