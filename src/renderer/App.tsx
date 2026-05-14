@@ -633,6 +633,7 @@ export function App(): JSX.Element {
       <FileFinderModal
         open={fileFinderOpen}
         rootPath={workspaceProject ?? ''}
+        activeTabId={workspaceSessionId ?? '__root__'}
         onClose={() => setFileFinderOpen(false)}
       />
       <KeyboardShortcutsModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />

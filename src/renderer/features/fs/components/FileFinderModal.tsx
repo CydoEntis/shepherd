@@ -10,6 +10,7 @@ import { cn, normalizePath } from '../../../lib/utils'
 interface Props {
   open: boolean
   rootPath: string
+  activeTabId: string
   onClose: () => void
 }
 
@@ -29,7 +30,7 @@ function isIgnored(p: string): boolean {
   return p.split('/').some((seg) => IGNORE_SEGMENTS.has(seg))
 }
 
-export function FileFinderModal({ open, rootPath, onClose }: Props): JSX.Element | null {
+export function FileFinderModal({ open, rootPath, activeTabId, onClose }: Props): JSX.Element | null {
   const [query, setQuery] = useState('')
   const [allFiles, setAllFiles] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
@@ -88,10 +89,16 @@ export function FileFinderModal({ open, rootPath, onClose }: Props): JSX.Element
         .slice(0, 80)
     : []
 
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+
   const openFile = useCallback((filePath: string) => {
     const state = useStore.getState()
-    const tabId = state.activeSessionId
-    if (!tabId || tabId === '__root__') return
+    // Use the workspace's active tab (workspaceSessionId from App.tsx) as the target.
+    // Fall back to store.activeSessionId, then '__root__' as last resort.
+    const tabId = (activeTabId && state.paneTree[activeTabId])
+      ? activeTabId
+      : (state.activeSessionId && state.paneTree[state.activeSessionId] ? state.activeSessionId : '__root__')
     const currentTree = state.paneTree[tabId]
     if (!currentTree) return
 
@@ -101,14 +108,15 @@ export function FileFinderModal({ open, rootPath, onClose }: Props): JSX.Element
 
     if (state.focusedLeafId) {
       const focused = findLeafById(currentTree, state.focusedLeafId)
-      if (focused?.type === 'leaf' && focused.panel === 'file-editor') { sendToPane(state.focusedLeafId); return }
+      if (focused?.type === 'leaf' && focused.panel === 'file-editor') { sendToPane(state.focusedLeafId); onCloseRef.current(); return }
     }
-    if (currentTree.type === 'leaf' && currentTree.panel === 'file-editor') { sendToPane(currentTree.id); return }
+    if (currentTree.type === 'leaf' && currentTree.panel === 'file-editor') { sendToPane(currentTree.id); onCloseRef.current(); return }
     if (currentTree.type === 'leaf' && currentTree.panel === 'home') {
-      state.replaceLayoutLeaf(tabId, currentTree.id, makeFileEditorLeaf(filePath)); return
+      state.replaceLayoutLeaf(tabId, currentTree.id, makeFileEditorLeaf(filePath)); onCloseRef.current(); return
     }
     state.insertLayoutAtRight(tabId, makeFileEditorLeaf(filePath))
-  }, [])
+    onCloseRef.current()
+  }, [activeTabId])
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (!open) return
