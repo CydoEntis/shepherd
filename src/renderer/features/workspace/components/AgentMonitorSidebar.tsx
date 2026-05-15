@@ -53,7 +53,9 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
 
   const focusedLeafId = useStore((s) => s.focusedLeafId)
   const setFocusedLeaf = useStore((s) => s.setFocusedLeaf)
-  const removeLayoutLeaf = useStore((s) => s.removeLayoutLeaf)
+  const openFilesList = useStore((s) => s.openFilesList)
+  const removeOpenFile = useStore((s) => s.removeOpenFile)
+  const removeFileFromAllLayouts = useStore((s) => s.removeFileFromAllLayouts)
   const { startDrag, endDrag } = useLayoutDnd()
   const ghostRef = useRef<HTMLImageElement | null>(null)
   const GHOST_SRC = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
@@ -228,40 +230,71 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
     return activeSessionId
   }, [activeSessionId, focusedSessionId, paneTree])
 
-  // Scan every session belonging to this workspace (plus __root__) so open files
-  // stay visible in the sidebar regardless of which session is currently focused,
-  // and survive switching away and back to this workspace.
-  const openFiles = useMemo(() => {
-    const result: Array<{ leafId: string; filePath: string; tabId: string }> = []
-    const seen = new Set<string>()
-    const tabsToScan = new Set<string>(projectSessions.map((s) => s.sessionId))
-    if (activeSessionId) tabsToScan.add(activeSessionId)
-    for (const tabId of tabsToScan) {
+  // Which file path is shown in the currently focused leaf?
+  const activeFilePath = useMemo(() => {
+    if (!focusedLeafId) return null
+    for (const tabId of Object.keys(paneTree)) {
       const tree = paneTree[tabId]
       if (!tree) continue
-      for (const { leafId, filePath } of collectFileEditorLeaves(tree)) {
-        if (!seen.has(leafId)) {
-          seen.add(leafId)
-          result.push({ leafId, filePath, tabId })
-        }
+      const leaf = collectFileEditorLeaves(tree).find((l) => l.leafId === focusedLeafId)
+      if (leaf) return leaf.filePath
+    }
+    return null
+  }, [focusedLeafId, paneTree])
+
+  const navigateToFile = useCallback((filePath: string) => {
+    const state = useStore.getState()
+
+    // If file is already visible in the layout, just focus it
+    for (const tabId of Object.keys(state.paneTree)) {
+      const tree = state.paneTree[tabId]
+      if (!tree) continue
+      const leaf = collectFileEditorLeaves(tree).find((l) => normalizePath(l.filePath) === normalizePath(filePath))
+      if (leaf) {
+        if (tabId !== activeSessionId) onSelectSession(tabId)
+        setFocusedLeaf(leaf.leafId)
+        return
       }
     }
-    return result
-  }, [projectSessions, activeSessionId, paneTree])
 
-  const openFilesSection = openFiles.length === 0 ? null : (
+    // Not in layout — open alongside existing panes, never replace
+    const tabId = (activeSessionId && state.paneTree[activeSessionId])
+      ? activeSessionId
+      : (state.tabOrder.find((id) => state.paneTree[id]) ?? '__root__')
+    const tree = state.paneTree[tabId]
+    if (!tree) return
+
+    const newLeaf = makeFileEditorLeaf(filePath)
+    const fileLeaves = collectFileEditorLeaves(tree)
+    if (fileLeaves.length > 0) {
+      const target = fileLeaves.find((l) => l.leafId === state.focusedLeafId) ?? fileLeaves[0]
+      state.replaceLayoutLeaf(tabId, target.leafId, newLeaf)
+    } else if (tree.type === 'leaf' && tree.panel === 'home') {
+      state.replaceLayoutLeaf(tabId, tree.id, newLeaf)
+    } else {
+      state.insertLayoutAtRight(tabId, newLeaf)
+    }
+    state.setFocusedLeaf(newLeaf.id)
+  }, [activeSessionId, onSelectSession, setFocusedLeaf])
+
+  const killFile = useCallback((filePath: string) => {
+    removeOpenFile(filePath)
+    removeFileFromAllLayouts(filePath)
+  }, [removeOpenFile, removeFileFromAllLayouts])
+
+  const openFilesSection = openFilesList.length === 0 ? null : (
     <div className="flex-shrink-0 border-t border-brand-panel/40 py-1">
       <div className="px-3 py-1 text-[10px] text-zinc-600 uppercase tracking-wider font-semibold select-none">
         Open Files
       </div>
-      {openFiles.map(({ leafId, filePath, tabId: fileTabId }) => {
-        const name = filePath.replace(/\\/g, '/').split('/').pop() ?? filePath
+      {openFilesList.map((filePath) => {
+        const name = normalizePath(filePath).split('/').pop() ?? filePath
         const ext = name.includes('.') ? name.split('.').pop()?.toLowerCase() ?? '' : ''
         const stem = ext ? name.slice(0, name.length - ext.length - 1) : name
-        const isActive = leafId === focusedLeafId
+        const isActive = filePath === activeFilePath
         return (
           <div
-            key={leafId}
+            key={filePath}
             draggable
             onDragStart={(e) => {
               if (!ghostRef.current) {
@@ -269,16 +302,13 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
               }
               e.dataTransfer.setDragImage(ghostRef.current, 0, 0)
               e.dataTransfer.effectAllowed = 'move'
-              startDrag({ type: 'layout-leaf', leafId, tabId: fileTabId })
+              e.dataTransfer.setData('text/plain', filePath)
+              startDrag({ type: 'file-path', filePath })
             }}
             onDragEnd={() => endDrag()}
-            onClick={() => {
-              // Switch to the session that owns this file pane if not already there
-              if (fileTabId !== activeSessionId) onSelectSession(fileTabId)
-              setFocusedLeaf(leafId)
-            }}
+            onClick={() => navigateToFile(filePath)}
             className={cn(
-              'flex items-center gap-1.5 px-2 py-1.5 mx-1 rounded select-none group transition-colors cursor-grab active:cursor-grabbing',
+              'flex items-center gap-1.5 px-2 py-1.5 mx-1 rounded select-none group transition-colors cursor-pointer',
               isActive
                 ? 'bg-brand-panel/70 text-zinc-200'
                 : 'text-zinc-500 hover:text-zinc-300 hover:bg-brand-panel/40'
@@ -290,8 +320,9 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
               {ext && <span className={isActive ? 'text-zinc-500' : 'text-zinc-700'}>.{ext}</span>}
             </span>
             <button
-              onClick={(e) => { e.stopPropagation(); removeLayoutLeaf(fileTabId, leafId) }}
+              onClick={(e) => { e.stopPropagation(); killFile(filePath) }}
               className="flex-shrink-0 opacity-0 group-hover:opacity-100 p-0.5 rounded text-zinc-600 hover:text-zinc-300 transition-colors"
+              title="Remove file"
             >
               <X size={10} />
             </button>

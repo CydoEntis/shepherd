@@ -288,4 +288,5 @@ export interface PersistedLayout {
   activeTabIndex: number
   sessions: PersistedSession[]
   detachedNotePanes?: Array<{ noteId: string; panel: 'notes' | 'markdown-preview' }>
+  openFilesList?: string[]
 }

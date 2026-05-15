@@ -3,7 +3,7 @@ import { toast } from 'sonner'
 import { useStore } from '../../../store/root.store'
 import { createSession, patchSession, writeToSession } from '../session.service'
 import { clearLayout } from '../persistence.service'
-import { collectSessionIds, migrateLayoutNode } from '../../layout/layout-tree'
+import { collectSessionIds, collectFileEditorLeaves, migrateLayoutNode } from '../../layout/layout-tree'
 import type { PersistedLayout } from '@shared/ipc-types'
 import type { LayoutNode } from '../../layout/layout-tree'
 import { DEFAULT_COLS, DEFAULT_ROWS } from '@shared/constants'
@@ -88,6 +88,14 @@ export function useLayoutRestore(): void {
     }
 
     setIsRestoringLayout(false)
+
+    // Repopulate openFilesList: merge saved list with any file-editor leaves in restored trees
+    const restoreStore = useStore.getState()
+    const filesToRestore = new Set<string>(layout.openFilesList ?? [])
+    for (const tree of Object.values(restoreStore.paneTree)) {
+      collectFileEditorLeaves(tree).forEach((info) => filesToRestore.add(info.filePath))
+    }
+    filesToRestore.forEach((path) => restoreStore.addOpenFile(path))
 
     if (resumeIds.length > 0) {
       setTimeout(() => {

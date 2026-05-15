@@ -4,7 +4,7 @@ import { Search, X, FileText, FolderOpen, FilePlus2, FolderPlus } from 'lucide-r
 import { findFiles, copyFile } from '../fs.service'
 import { FileTree } from './FileTree'
 import { useStore } from '../../../store/root.store'
-import { makeFileEditorLeaf } from '../../layout/layout-tree'
+import { makeFileEditorLeaf, collectFileEditorLeaves } from '../../layout/layout-tree'
 import { cn, normalizePath } from '../../../lib/utils'
 
 interface Props {
@@ -37,6 +37,7 @@ export function FileFinderModal({ open, rootPath, activeTabId, onClose }: Props)
   const [selectedIdx, setSelectedIdx] = useState(0)
   const [refreshTick, setRefreshTick] = useState(0)
   const [isDragOver, setIsDragOver] = useState(false)
+  const [fileDragActive, setFileDragActive] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const refresh = useCallback(() => setRefreshTick((t) => t + 1), [])
@@ -94,21 +95,34 @@ export function FileFinderModal({ open, rootPath, activeTabId, onClose }: Props)
 
   const openFile = useCallback((filePath: string) => {
     const state = useStore.getState()
+    state.addOpenFile(filePath)
+
     const tabId = (activeTabId && state.paneTree[activeTabId])
       ? activeTabId
       : (state.activeSessionId && state.paneTree[state.activeSessionId] ? state.activeSessionId : '__root__')
-    const currentTree = state.paneTree[tabId]
-    if (!currentTree) return
+    const tree = state.paneTree[tabId]
+    if (!tree) return
 
-    // Replace the home leaf if that's the only pane (nothing open yet)
-    if (currentTree.type === 'leaf' && currentTree.panel === 'home') {
-      state.replaceLayoutLeaf(tabId, currentTree.id, makeFileEditorLeaf(filePath))
+    // If this file is already visible in the layout, just focus it
+    const existing = collectFileEditorLeaves(tree).find((l) => normalizePath(l.filePath) === normalizePath(filePath))
+    if (existing) {
+      state.setFocusedLeaf(existing.leafId)
       onCloseRef.current()
       return
     }
 
-    // Always open in a new split so multiple files can be open side by side
-    state.insertLayoutAtRight(tabId, makeFileEditorLeaf(filePath))
+    const newLeaf = makeFileEditorLeaf(filePath)
+    const fileLeaves = collectFileEditorLeaves(tree)
+    if (fileLeaves.length > 0) {
+      // Replace the focused file-editor pane, or the first one
+      const target = fileLeaves.find((l) => l.leafId === state.focusedLeafId) ?? fileLeaves[0]
+      state.replaceLayoutLeaf(tabId, target.leafId, newLeaf)
+    } else if (tree.type === 'leaf' && tree.panel === 'home') {
+      state.replaceLayoutLeaf(tabId, tree.id, newLeaf)
+    } else {
+      state.insertLayoutAtRight(tabId, newLeaf)
+    }
+    state.setFocusedLeaf(newLeaf.id)
     onCloseRef.current()
   }, [activeTabId])
 
@@ -141,20 +155,37 @@ export function FileFinderModal({ open, rootPath, activeTabId, onClose }: Props)
     return () => window.removeEventListener('keydown', handleKeyDown, { capture: true })
   }, [handleKeyDown])
 
-  // Close modal when a file drag starts so the layout drop targets become accessible
+  // When a file drag starts: keep the modal mounted (so the drag source stays in the DOM)
+  // but make it invisible and non-interactive so drop targets underneath receive events.
+  // On dragend (drop or cancel), close the modal.
   useEffect(() => {
     if (!open) return
-    const handler = (): void => onClose()
-    document.addEventListener('acc:file-drag-start', handler)
-    return () => document.removeEventListener('acc:file-drag-start', handler)
-  }, [open, onClose])
+    const onFileDragStart = (): void => setFileDragActive(true)
+    document.addEventListener('acc:file-drag-start', onFileDragStart)
+    return () => document.removeEventListener('acc:file-drag-start', onFileDragStart)
+  }, [open])
 
-  if (!open) return null
+  useEffect(() => {
+    if (!fileDragActive) return
+    const onDragEnd = (): void => {
+      setFileDragActive(false)
+      onCloseRef.current()
+    }
+    document.addEventListener('dragend', onDragEnd)
+    return () => document.removeEventListener('dragend', onDragEnd)
+  }, [fileDragActive])
+
+  useEffect(() => {
+    if (!open) setFileDragActive(false)
+  }, [open])
+
+  if (!open && !fileDragActive) return null
 
   return createPortal(
     <div
       className="fixed inset-0 z-50 bg-black/50"
-      onMouseDown={() => onClose()}
+      style={fileDragActive ? { opacity: 0, pointerEvents: 'none' } : undefined}
+      onMouseDown={fileDragActive ? undefined : () => onClose()}
     >
       <div
         className={cn(

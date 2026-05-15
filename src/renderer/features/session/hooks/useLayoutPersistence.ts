@@ -35,6 +35,7 @@ export function useLayoutPersistence(): void {
       const layout: PersistedLayout = {
         version: 1,
         activeTabIndex: state.tabOrder.indexOf(state.activeSessionId ?? ''),
+        openFilesList: state.openFilesList,
         sessions: runningSessions.map((m) => ({
           sessionId: m.sessionId,
           name: m.name,

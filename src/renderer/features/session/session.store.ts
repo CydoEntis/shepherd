@@ -61,6 +61,10 @@ export interface SessionSlice {
   removeDetachedNoteId: (noteId: string) => void
   resetRootPane: () => void
 
+  openFilesList: string[]
+  addOpenFile: (path: string) => void
+  removeOpenFile: (path: string) => void
+  removeFileFromAllLayouts: (filePath: string) => void
 }
 
 export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', never]], [], SessionSlice> = (set) => ({
@@ -73,6 +77,7 @@ export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', neve
   pendingRestore: null,
   isRestoringLayout: false,
   detachedNoteIds: [],
+  openFilesList: [],
 
   upsertSession: (meta) =>
     set((state) => {
@@ -488,6 +493,44 @@ export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', neve
   resetRootPane: () =>
     set((state) => {
       state.paneTree['__root__'] = makeHomeLeaf() as LayoutNode
+    }),
+
+  addOpenFile: (path) =>
+    set((state) => {
+      if (!state.openFilesList.includes(path)) state.openFilesList.push(path)
+    }),
+
+  removeOpenFile: (path) =>
+    set((state) => {
+      state.openFilesList = state.openFilesList.filter((p) => p !== path)
+    }),
+
+  removeFileFromAllLayouts: (filePath) =>
+    set((state) => {
+      for (const tabId of Object.keys(state.paneTree)) {
+        const collectLeafIds = (node: LayoutNode): string[] => {
+          if (node.type === 'leaf') {
+            return node.panel === 'file-editor' && node.filePath === filePath ? [node.id] : []
+          }
+          return node.children.flatMap(collectLeafIds)
+        }
+        const leafIds = collectLeafIds(state.paneTree[tabId])
+        for (const leafId of leafIds) {
+          const tree = state.paneTree[tabId]
+          if (!tree) break
+          const newTree = removeNode(tree, leafId)
+          if (newTree) {
+            state.paneTree[tabId] = newTree
+          } else if (tabId === '__root__') {
+            state.paneTree[tabId] = makeHomeLeaf()
+          } else {
+            state.tabOrder = state.tabOrder.filter((id) => id !== tabId)
+            delete state.paneTree[tabId]
+            if (state.activeSessionId === tabId) state.activeSessionId = state.tabOrder[0] ?? null
+            break
+          }
+        }
+      }
     }),
 
 })

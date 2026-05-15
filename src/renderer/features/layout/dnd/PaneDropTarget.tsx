@@ -1,9 +1,9 @@
 import { useRef, useCallback } from 'react'
-import { GripHorizontal } from 'lucide-react'
 import { cn } from '../../../lib/utils'
 import { useLayoutDnd } from './LayoutDndContext'
 import { useStore } from '../../../store/root.store'
-import { makeNotesLeaf, findNotesLeafIdForNote, makeFileEditorLeaf, findLeafById } from '../layout-tree'
+import { makeNotesLeaf, findNotesLeafIdForNote, makeFileEditorLeaf, findLeafById, collectFileEditorLeaves } from '../layout-tree'
+import { normalizePath } from '../../../lib/utils'
 import type { DropSide } from './LayoutDndContext'
 
 interface Props {
@@ -29,32 +29,22 @@ const ZONE_CLASS: Record<DropSide, string> = {
   bottom: 'bottom-1 left-1 right-1 h-[45%]',
 }
 
-const GHOST_SRC = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
-
 export function PaneDropTarget({ leafId, tabId, children }: Props): JSX.Element {
   const paneRef = useRef<HTMLDivElement>(null)
-  const ghostRef = useRef<HTMLImageElement | null>(null)
 
-  const { dragState, activeDropTarget, startDrag, endDrag, setActiveDropTarget } = useLayoutDnd()
+  const { dragState, activeDropTarget, endDrag, setActiveDropTarget } = useLayoutDnd()
   const moveLayout = useStore((s) => s.moveLayout)
   const insertSessionIntoLayout = useStore((s) => s.insertSessionIntoLayout)
   const insertLayout = useStore((s) => s.insertLayout)
+  const replaceLayoutLeaf = useStore((s) => s.replaceLayoutLeaf)
   const removeLayoutLeaf = useStore((s) => s.removeLayoutLeaf)
+  const addOpenFile = useStore((s) => s.addOpenFile)
+  const setFocusedLeaf = useStore((s) => s.setFocusedLeaf)
   const paneTree = useStore((s) => s.paneTree)
 
   const isDragging = dragState !== null
   const isSource = dragState?.type === 'layout-leaf' && dragState.leafId === leafId
   const activeZone = activeDropTarget?.leafId === leafId ? activeDropTarget.side : null
-
-  const handleDragStart = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    if (!ghostRef.current) {
-      const img = new Image(); img.src = GHOST_SRC; ghostRef.current = img
-    }
-    e.dataTransfer.setDragImage(ghostRef.current, 0, 0)
-    e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('text/plain', leafId)
-    startDrag({ type: 'layout-leaf', leafId, tabId })
-  }, [leafId, tabId, startDrag])
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     if (!dragState || isSource || !paneRef.current) return
@@ -81,12 +71,49 @@ export function PaneDropTarget({ leafId, tabId, children }: Props): JSX.Element 
     const side = (activeZone === 'right' || activeZone === 'bottom') ? 'after' : 'before'
 
     if (dragState.type === 'file-path') {
-      // Never insert file editors into '__root__' — that corrupts workspace navigation.
-      // Dragging always creates a split at the drop edge; clicking in the file tree
-      // handles switching the file shown in an existing pane.
-      if (tabId !== '__root__') {
-        insertLayout(tabId, leafId, direction, makeFileEditorLeaf(dragState.filePath), side)
+      const filePath = dragState.filePath
+
+      // Check if file is already open somewhere in the layout
+      let existingLeafId: string | null = null
+      let existingTabId: string | null = null
+      for (const tId of Object.keys(paneTree)) {
+        const t = paneTree[tId]
+        if (!t) continue
+        const found = collectFileEditorLeaves(t).find((l) => normalizePath(l.filePath) === normalizePath(filePath))
+        if (found) { existingLeafId = found.leafId; existingTabId = tId; break }
       }
+
+      if (existingLeafId && existingTabId) {
+        // File already open — move it to the drop position if there's a valid zone
+        if (activeZone && existingLeafId !== leafId) {
+          if (existingTabId === tabId) {
+            moveLayout(tabId, existingLeafId, leafId, direction, side)
+          } else {
+            const srcTree = paneTree[existingTabId]
+            if (srcTree) {
+              const srcLeaf = findLeafById(srcTree, existingLeafId)
+              if (srcLeaf) {
+                insertLayout(tabId, leafId, direction, srcLeaf, side)
+                removeLayoutLeaf(existingTabId, existingLeafId)
+              }
+            }
+          }
+        }
+        setFocusedLeaf(existingLeafId)
+        endDrag()
+        return
+      }
+
+      // Not yet in layout — split alongside the drop target
+      const newLeaf = makeFileEditorLeaf(filePath)
+      addOpenFile(filePath)
+      const currentTree = paneTree[tabId]
+      if (currentTree?.type === 'leaf' && currentTree.panel === 'home' && currentTree.id === leafId) {
+        replaceLayoutLeaf(tabId, leafId, newLeaf)
+      } else {
+        insertLayout(tabId, leafId, direction, newLeaf, side)
+      }
+      setFocusedLeaf(newLeaf.id)
     } else if (!activeZone) {
       endDrag(); return
     } else if (dragState.type === 'layout-leaf') {
@@ -112,7 +139,7 @@ export function PaneDropTarget({ leafId, tabId, children }: Props): JSX.Element 
     }
 
     endDrag()
-  }, [dragState, activeZone, tabId, leafId, moveLayout, insertSessionIntoLayout, insertLayout, paneTree, endDrag])
+  }, [dragState, activeZone, tabId, leafId, moveLayout, insertSessionIntoLayout, insertLayout, replaceLayoutLeaf, addOpenFile, setFocusedLeaf, paneTree, endDrag])
 
   return (
     <div
@@ -123,19 +150,6 @@ export function PaneDropTarget({ leafId, tabId, children }: Props): JSX.Element 
       onDrop={handleDrop}
     >
       {children}
-
-      {/* Drag handle — shown on pane hover, initiates pane rearrange */}
-      {!isDragging && (
-        <div
-          draggable
-          onDragStart={handleDragStart}
-          onDragEnd={() => endDrag()}
-          className="absolute top-1.5 right-1.5 z-10 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing p-1 rounded hover:bg-brand-panel/80 bg-brand-surface/60"
-          title="Drag to rearrange"
-        >
-          <GripHorizontal size={10} className="text-zinc-500" />
-        </div>
-      )}
 
       {/* Transparent overlay — blocks terminal canvas from eating drag events */}
       {isDragging && !isSource && (

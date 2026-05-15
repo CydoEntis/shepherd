@@ -1,12 +1,15 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import Editor from '@monaco-editor/react'
+import type { OnMount } from '@monaco-editor/react'
 import { Save, ChevronRight } from 'lucide-react'
 import { readFile, writeFile, showInFolder, openInEditor } from '../fs.service'
 import { useInstalledEditors } from '../hooks/useInstalledEditors'
 import { useStore } from '../../../store/root.store'
 import { cn } from '../../../lib/utils'
 import { toast } from 'sonner'
+
+type EditorInstance = Parameters<OnMount>[0]
 
 function extToLang(filePath: string): string {
   const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
@@ -47,6 +50,19 @@ function CtxSubMenu({ label, children }: { label: string; children: React.ReactN
   )
 }
 
+function CtxItem({ label, hint, disabled, onClick }: { label: string; hint?: string; disabled?: boolean; onClick: () => void }): JSX.Element {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors text-left disabled:opacity-40 disabled:cursor-default"
+    >
+      <span className="flex-1">{label}</span>
+      {hint && <span className="text-zinc-600 flex-shrink-0">{hint}</span>}
+    </button>
+  )
+}
+
 interface Props {
   filePath: string
   tabId: string
@@ -60,6 +76,7 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
   const [saving, setSaving] = useState(false)
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
   const [monacoThemeOverride, setMonacoThemeOverride] = useState<MonacoThemeId | null>(null)
+  const editorRef = useRef<EditorInstance | null>(null)
   const removeLayoutLeaf = useStore((s) => s.removeLayoutLeaf)
   const theme = useStore((s) => s.settings.theme)
   const editors = useInstalledEditors()
@@ -68,14 +85,12 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
   const autoTheme: MonacoThemeId = theme === 'light' ? 'vs' : 'vs-dark'
   const monacoTheme = monacoThemeOverride ?? autoTheme
 
-  // Load file content when path changes
   useEffect(() => {
     setContent(null)
     setDirty(false)
     readFile(currentPath).then((text) => setContent(text ?? ''))
   }, [currentPath])
 
-  // Switch file when file-finder / file-tree targets this pane
   useEffect(() => {
     const handler = (e: Event): void => {
       const { leafId: targetId, filePath: newPath } = (e as CustomEvent<{ leafId: string; filePath: string }>).detail
@@ -104,7 +119,6 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
   const handleSaveRef = useRef(handleSave)
   useEffect(() => { handleSaveRef.current = handleSave })
 
-  // Close context menu on outside click
   useEffect(() => {
     if (!ctxMenu) return
     const handler = (e: MouseEvent): void => {
@@ -114,14 +128,26 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
     return () => document.removeEventListener('mousedown', handler)
   }, [ctxMenu])
 
-  const ctxX = ctxMenu ? Math.min(ctxMenu.x, window.innerWidth - 200) : 0
-  const ctxY = ctxMenu ? Math.min(ctxMenu.y, window.innerHeight - 240) : 0
+  const handleEditorAction = (actionId: string): void => {
+    editorRef.current?.getAction(actionId)?.run()
+    setCtxMenu(null)
+  }
+
+  const handleClipboard = (action: 'cut' | 'copy' | 'paste'): void => {
+    const actionMap = {
+      cut: 'editor.action.clipboardCutAction',
+      copy: 'editor.action.clipboardCopyAction',
+      paste: 'editor.action.clipboardPasteAction',
+    }
+    editorRef.current?.trigger('contextmenu', actionMap[action], null)
+    setCtxMenu(null)
+  }
+
+  const ctxX = ctxMenu ? Math.min(ctxMenu.x, window.innerWidth - 220) : 0
+  const ctxY = ctxMenu ? Math.min(ctxMenu.y, window.innerHeight - 320) : 0
 
   return (
-    <div
-      className="flex flex-col w-full h-full bg-brand-bg"
-      onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }) }}
-    >
+    <div className="flex flex-col w-full h-full bg-brand-bg">
       {/* Save bar — only visible when dirty */}
       {dirty && (
         <div className="flex-shrink-0 flex items-center gap-2 px-3 py-1 border-b border-brand-panel/60 bg-brand-surface">
@@ -149,7 +175,13 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
             language={extToLang(currentPath)}
             theme={monacoTheme}
             onMount={(editor, monaco) => {
+              editorRef.current = editor
               editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => void handleSaveRef.current())
+              editor.updateOptions({ contextmenu: false })
+              editor.getDomNode()?.addEventListener('contextmenu', (e) => {
+                e.preventDefault()
+                setCtxMenu({ x: e.clientX, y: e.clientY })
+              })
             }}
             options={{
               fontSize: 13,
@@ -160,6 +192,7 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
               padding: { top: 8, bottom: 8 },
               overviewRulerBorder: false,
               folding: true,
+              contextmenu: false,
             }}
             onChange={(val) => {
               if (val !== undefined) { setContent(val); setDirty(true) }
@@ -173,23 +206,18 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
         <div
           ref={ctxRef}
           style={{ position: 'fixed', top: ctxY, left: ctxX, zIndex: 9999 }}
-          className="bg-brand-surface border border-brand-panel/60 rounded-md shadow-2xl py-1 w-48"
+          className="bg-brand-surface border border-brand-panel/60 rounded-md shadow-2xl py-1 w-52"
           onContextMenu={(e) => e.preventDefault()}
         >
-          <button
-            onClick={() => { void handleSave(); setCtxMenu(null) }}
-            disabled={!dirty}
-            className="w-full flex items-center px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors text-left disabled:opacity-40 disabled:cursor-default"
-          >
-            Save
-          </button>
+          <CtxItem label="Save" hint="Ctrl+S" disabled={!dirty} onClick={() => { void handleSave(); setCtxMenu(null) }} />
           <div className="h-px bg-brand-panel my-1" />
-          <button
-            onClick={() => { showInFolder(currentPath).catch(() => {}); setCtxMenu(null) }}
-            className="w-full flex items-center px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors text-left"
-          >
-            Reveal in Explorer
-          </button>
+          <CtxItem label="Cut"   hint="Ctrl+X" onClick={() => handleClipboard('cut')} />
+          <CtxItem label="Copy"  hint="Ctrl+C" onClick={() => handleClipboard('copy')} />
+          <CtxItem label="Paste" hint="Ctrl+V" onClick={() => handleClipboard('paste')} />
+          <div className="h-px bg-brand-panel my-1" />
+          <CtxItem label="Format Document" hint="Shift+Alt+F" onClick={() => handleEditorAction('editor.action.formatDocument')} />
+          <div className="h-px bg-brand-panel my-1" />
+          <CtxItem label="Reveal in Explorer" onClick={() => { showInFolder(currentPath).catch(() => {}); setCtxMenu(null) }} />
           {editors.length > 0 && (
             <CtxSubMenu label="Open in">
               {editors.map((ed) => (
@@ -232,12 +260,7 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
             )}
           </CtxSubMenu>
           <div className="h-px bg-brand-panel my-1" />
-          <button
-            onClick={() => { removeLayoutLeaf(tabId, leafId); setCtxMenu(null) }}
-            className="w-full flex items-center px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors text-left"
-          >
-            Close Pane
-          </button>
+          <CtxItem label="Close Pane" onClick={() => { removeLayoutLeaf(tabId, leafId); setCtxMenu(null) }} />
         </div>,
         document.body
       )}

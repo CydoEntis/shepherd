@@ -128,10 +128,14 @@ export function PaneTreeRenderer({ node, tabId, onContextMenu, forceMainWindow, 
     }
 
     if (node.panel === 'file-editor') {
+      const isFileFocused = rootIsASplit && node.id === focusedLeafId
       return (
         <PaneDropTarget leafId={node.id} tabId={tabId}>
-          <div className="relative w-full h-full" onMouseDownCapture={() => setFocusedLeaf(node.id)}>
+          <div key={node.id} className="relative w-full h-full" onMouseDownCapture={() => setFocusedLeaf(node.id)}>
             <MonacoEditorPane filePath={node.filePath} tabId={tabId} leafId={node.id} />
+            {isFileFocused && (
+              <div className="absolute inset-0 pointer-events-none" style={{ boxShadow: 'inset 0 0 0 2px rgb(var(--brand-accent)), inset 0 3px 0 0 rgb(var(--brand-accent))' }} />
+            )}
           </div>
         </PaneDropTarget>
       )
