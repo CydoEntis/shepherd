@@ -100,10 +100,10 @@ function HotkeyInput({ value, onChange }: HotkeyInputProps): JSX.Element {
       onBlur={() => setCapturing(false)}
       onKeyDown={capturing ? handleKeyDown : undefined}
       className={cn(
-        'flex items-center h-9 px-3 rounded-md border text-xs font-mono cursor-pointer select-none transition-colors outline-none flex-1',
+        'flex items-center h-9 px-3 rounded border text-xs font-mono cursor-pointer select-none transition-colors outline-none flex-1',
         capturing
           ? 'border-brand-accent/60 bg-brand-accent/5 text-brand-accent'
-          : 'border-input bg-background text-zinc-300 hover:border-zinc-600'
+          : 'border-brand-panel bg-brand-surface text-zinc-300 hover:border-zinc-600'
       )}
     >
       {capturing
@@ -255,21 +255,23 @@ export function SettingsForm({ onClose }: Props): JSX.Element {
               <PopoverTrigger asChild>
                 <button
                   type="button"
-                  className="flex items-center gap-2.5 h-9 px-3 rounded-md border border-input bg-background text-sm w-full hover:border-zinc-600 transition-colors"
+                  className="flex h-9 w-full items-center justify-between rounded border border-brand-panel bg-brand-surface px-3 py-2 text-sm text-zinc-200 outline-none transition-colors hover:border-zinc-600"
                 >
                   {(() => {
                     const s = THEME_SWATCHES.find((t) => t.id === (settings.theme ?? 'space'))
                     return s ? (
                       <>
-                        <span className="w-5 h-3 rounded-sm flex-shrink-0" style={{ background: s.bg, border: `1.5px solid ${s.accent}` }} />
-                        <span className="flex-1 text-left text-zinc-300">{s.label}</span>
-                        <ChevronDown size={13} className="text-zinc-500 flex-shrink-0" />
+                        <span className="flex items-center gap-2">
+                          <span className="w-4 h-2.5 rounded-sm flex-shrink-0" style={{ background: s.bg, border: `1.5px solid ${s.accent}` }} />
+                          <span>{s.label}</span>
+                        </span>
+                        <ChevronDown className="h-3.5 w-3.5 text-zinc-500 shrink-0" />
                       </>
                     ) : null
                   })()}
                 </button>
               </PopoverTrigger>
-              <PopoverContent className="w-[300px] p-3" align="start">
+              <PopoverContent className="w-[300px] p-3 max-h-none overflow-visible bg-brand-surface border-brand-panel" align="start">
                 <div className="grid grid-cols-3 gap-2">
                   {THEME_SWATCHES.map(({ id, label, bg, accent }) => {
                     const active = (settings.theme ?? 'space') === id
