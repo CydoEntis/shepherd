@@ -1,8 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { Plus, ChevronDown, ChevronRight, FolderOpen, FolderTree, X, Users, Terminal, Search, FilePlus2, FolderPlus, ExternalLink, SearchCode } from 'lucide-react'
 import { useStore } from '../../../store/root.store'
-import { patchSession, killSession, createSession } from '../../session/session.service'
-import { DEFAULT_COLS, DEFAULT_ROWS } from '@shared/constants'
+import { patchSession, killSession } from '../../session/session.service'
 import { EditSessionModal } from '../../session/components/EditSessionModal'
 import { EditGroupModal } from '../../session/components/EditGroupModal'
 import { removeWorktree, copyFile, openInEditor } from '../../fs/fs.service'
@@ -10,6 +9,7 @@ import { useInstalledEditors } from '../../fs/hooks/useInstalledEditors'
 import { createWorkspace, deleteWorkspace } from '../workspace.service'
 import { detachTab, reattachTab, moveToWindow } from '../../window/window.service'
 import { NewWorkspaceModal } from './NewWorkspaceModal'
+import { ConfirmCloseProjectModal } from './ConfirmCloseProjectModal'
 import { shortPath } from '../../../lib/utils'
 import { findTabForSession, collectSessionIds, makeFileEditorLeaf, collectFileEditorLeaves } from '../../layout/layout-tree'
 import { useLayoutDnd } from '../../layout/dnd/LayoutDndContext'
@@ -24,7 +24,7 @@ import { GroupCtxMenu } from './GroupCtxMenu'
 import { NewGroupModal } from './NewGroupModal'
 import { FileTree } from '../../fs/components/FileTree'
 import { SearchPanel } from './SearchPanel'
-import type { SessionMeta } from '@shared/ipc-types'
+import type { SessionMeta, Workspace } from '@shared/ipc-types'
 import { ROOT_WORKSPACE_ID } from '@shared/ipc-types'
 
 interface Props {
@@ -50,6 +50,7 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
   const addTab = useStore((s) => s.addTab)
   const insertLayoutAtRight = useStore((s) => s.insertLayoutAtRight)
   const sessionGroups = useStore((s) => s.settings.sessionGroups)
+  const recentProjects = useStore((s) => s.settings.recentProjects)
   const updateSettings = useStore((s) => s.updateSettings)
   const workspaces = useStore((s) => s.workspaces)
   const addWorkspace = useStore((s) => s.addWorkspace)
@@ -79,6 +80,7 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
   const [isDragOver, setIsDragOver] = useState(false)
   const [openInOpen, setOpenInOpen] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
+  const [closingProject, setClosingProject] = useState<Workspace | null>(null)
   const sidebarBodyRef = useRef<HTMLDivElement>(null)
   const installedEditors = useInstalledEditors()
 
@@ -89,11 +91,24 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
   // File tree root: named workspace folder (anchored) | home workspace follows session cwd, falls back to rootPath
   const fileTreeRoot = useMemo(() => {
     if (!isRootWorkspace && normalizedActive) return normalizedActive
-    const id = focusedSessionId ?? activeSessionId
+    // Guard against focusedSessionId pointing to a session in another workspace.
+    // A root-workspace session either has workspaceId === ROOT_WORKSPACE_ID or has no
+    // workspaceId and its path doesn't match any named workspace.
+    const focused = focusedSessionId ? sessions[focusedSessionId] : undefined
+    const focusedBelongsHere = focused && (
+      focused.workspaceId === ROOT_WORKSPACE_ID ||
+      (!focused.workspaceId && !workspaces.some((w) => {
+        if (w.isRoot || !w.rootPath) return false
+        const wsPath = normalizePath(w.rootPath)
+        const sp = normalizePath(focused.projectRoot ?? focused.cwd)
+        return sp === wsPath || sp.startsWith(wsPath + '/')
+      }))
+    )
+    const id = focusedBelongsHere ? focusedSessionId : activeSessionId
     const cwd = id ? sessions[id]?.cwd : undefined
     if (cwd) return normalizePath(cwd)
     return normalizedActive ?? ''
-  }, [isRootWorkspace, normalizedActive, focusedSessionId, activeSessionId, sessions])
+  }, [isRootWorkspace, normalizedActive, focusedSessionId, activeSessionId, sessions, workspaces])
 
   // Switch to Files tab when a project root first appears (project opened or workspace selected)
   const prevRootRef = useRef(fileTreeRoot)
@@ -102,16 +117,10 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
     prevRootRef.current = fileTreeRoot
   }, [fileTreeRoot])
 
-  // When switching to a named workspace with a folder: show Files tab + auto-create session if none
+  // When switching to a named workspace with a folder: show Files tab
   useEffect(() => {
     if (isRootWorkspace || !normalizedActive || isRestoringLayout) return
     setActiveView('files')
-    if (projectSessions.length === 0) {
-      const name = normalizedActive.split('/').filter(Boolean).pop() ?? 'workspace'
-      createSession({ name, cwd: normalizedActive, cols: DEFAULT_COLS, rows: DEFAULT_ROWS, workspaceId: activeWorkspaceId })
-        .then((meta) => { upsertSession(meta); addTab(meta.sessionId) })
-        .catch(() => {})
-    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeWorkspaceId])
 
@@ -178,10 +187,13 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
   }, [activeWorkspaceId])
 
   useEffect(() => {
-    if (!isRootWorkspace && projectSessions.length > 0 && (!activeSessionId || activeSessionId === '__root__')) {
+    if (projectSessions.length > 0 && (!activeSessionId || activeSessionId === '__root__')) {
       const { paneTree } = useStore.getState()
       const tabId = findTabForSession(paneTree, projectSessions[0].sessionId)
-      if (tabId) onSelectSession(tabId)
+      if (tabId) {
+        onSelectSession(tabId)
+        useStore.getState().setActiveSession(tabId)
+      }
     }
   }, [projectSessions.length, activeSessionId, isRootWorkspace, onSelectSession])
 
@@ -264,6 +276,41 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
     await updateSettings({ sessionGroups: [...sessionGroups, { id, name, color }] })
     toast.success(`Group "${name}" created`)
   }, [sessionGroups, updateSettings])
+
+  const handleCloseProject = useCallback(async (workspace: Workspace): Promise<void> => {
+    const state = useStore.getState()
+    const workspaceSessions = Object.values(state.sessions).filter((s) => s.workspaceId === workspace.id)
+    await Promise.all(workspaceSessions.map((s) => killSession(s.sessionId).catch(() => {})))
+    const tabIds = new Set<string>()
+    for (const s of workspaceSessions) {
+      const tabId = findTabForSession(state.paneTree, s.sessionId) ?? s.sessionId
+      tabIds.add(tabId)
+    }
+    tabIds.forEach((tabId) => removeTab(tabId))
+    try { await deleteWorkspace(workspace.id) } catch {}
+    if (workspace.rootPath) {
+      const current = useStore.getState().settings.recentProjects ?? []
+      if (!current.includes(workspace.rootPath)) {
+        await updateSettings({ recentProjects: [workspace.rootPath, ...current].slice(0, 10) })
+      }
+    }
+    removeWorkspaceFromStore(workspace.id)
+  }, [removeTab, removeWorkspaceFromStore, updateSettings])
+
+  const handleReopenProject = useCallback(async (rootPath: string): Promise<void> => {
+    setWsOpen(false)
+    const name = rootPath.replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? 'project'
+    try {
+      const workspace = await createWorkspace({ name, rootPath })
+      addWorkspace(workspace)
+      const updated = (useStore.getState().settings.recentProjects ?? []).filter((p) => p !== rootPath)
+      await updateSettings({ recentProjects: updated })
+      onWorkspaceChange(workspace.id)
+      toast.success(`Opened "${name}"`)
+    } catch {
+      toast.error('Failed to open project')
+    }
+  }, [addWorkspace, onWorkspaceChange, updateSettings])
 
   const handleDetach = useCallback((sessionId: string): void => {
     if (!windowId) return
@@ -540,7 +587,7 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
                 onClick={() => { setWsOpen(false); setShowNewWsModal(true) }}
                 className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-zinc-500 hover:bg-brand-panel hover:text-zinc-300 transition-colors text-left"
               >
-                <Plus size={11} /> New Workspace
+                <Plus size={11} /> New Project
               </button>
               <div className="h-px bg-brand-panel my-1" />
               <button
@@ -554,27 +601,51 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
                 <div key={w.id} className="group relative flex items-center">
                   <button
                     onClick={() => { onWorkspaceChange(w.id); setWsOpen(false) }}
-                    className={cn('flex-1 flex flex-col px-3 py-1.5 text-left transition-colors hover:bg-brand-panel', w.id === activeWorkspaceId && 'bg-brand-panel/60')}
+                    className={cn('flex-1 flex flex-col px-3 py-1.5 text-left transition-colors hover:bg-brand-panel pr-8', w.id === activeWorkspaceId && 'bg-brand-panel/60')}
                   >
                     <span className={cn('text-xs', w.id === activeWorkspaceId ? 'text-zinc-200' : 'text-zinc-400')}>{w.name}</span>
                     {w.rootPath && <span className="text-[10px] text-zinc-600">{shortPath(w.rootPath)}</span>}
                   </button>
                   <button
-                    onClick={async (e) => {
-                      e.stopPropagation()
-                      try {
-                        await deleteWorkspace(w.id)
-                        removeWorkspaceFromStore(w.id)
-                        if (activeWorkspaceId === w.id) onWorkspaceChange(ROOT_WORKSPACE_ID)
-                      } catch {}
-                      setWsOpen(false)
-                    }}
-                    className="absolute right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 text-zinc-600 hover:text-red-400"
+                    onClick={(e) => { e.stopPropagation(); setWsOpen(false); setClosingProject(w) }}
+                    title="Close project"
+                    className="absolute right-2 p-1 text-zinc-500 hover:text-zinc-200 transition-colors"
                   >
                     <X size={11} />
                   </button>
                 </div>
               ))}
+              {recentProjects.length > 0 && (
+                <>
+                  <div className="h-px bg-brand-panel my-1" />
+                  <div className="px-3 pt-1 pb-0.5 text-[10px] text-zinc-600 uppercase tracking-wider">Recent</div>
+                  {recentProjects.slice(0, 8).map((path) => {
+                    const name = path.replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? path
+                    return (
+                      <div key={path} className="group relative flex items-center">
+                        <button
+                          onClick={() => void handleReopenProject(path)}
+                          className="flex-1 flex flex-col px-3 py-1.5 text-left hover:bg-brand-panel transition-colors pr-8"
+                        >
+                          <span className="text-xs text-zinc-400">{name}</span>
+                          <span className="text-[10px] text-zinc-600">{shortPath(path)}</span>
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            const updated = (useStore.getState().settings.recentProjects ?? []).filter((p) => p !== path)
+                            void updateSettings({ recentProjects: updated })
+                          }}
+                          title="Remove from recent"
+                          className="absolute right-2 p-1 text-zinc-600 hover:text-zinc-300 opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <X size={10} />
+                        </button>
+                      </div>
+                    )
+                  })}
+                </>
+              )}
             </div>
           </>
         )}
@@ -586,7 +657,7 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
                 const workspace = await createWorkspace({ name, rootPath })
                 addWorkspace(workspace)
                 onWorkspaceChange(workspace.id)
-                toast.success(`Workspace "${name}" created`)
+                toast.success(`Project "${name}" created`)
               } catch {
                 toast.error('Failed to create workspace')
               }
@@ -768,6 +839,14 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
         <NewGroupModal
           onDismiss={() => setShowNewGroupModal(false)}
           onSave={handleCreateGroup}
+        />
+      )}
+
+      {closingProject && (
+        <ConfirmCloseProjectModal
+          workspaceLabel={closingProject.name}
+          onClose={() => setClosingProject(null)}
+          onConfirm={() => { void handleCloseProject(closingProject); setClosingProject(null) }}
         />
       )}
     </div>

@@ -49,7 +49,7 @@ export function NewWorkspaceModal({ onDismiss, onSave }: Props): JSX.Element {
       <div className="absolute inset-0 bg-black/50" />
       <div className="relative bg-brand-surface border border-brand-panel/60 rounded-lg shadow-2xl w-80 p-5 flex flex-col gap-4">
         <div className="flex items-center justify-between">
-          <span className="text-sm font-semibold text-zinc-200">New Workspace</span>
+          <span className="text-sm font-semibold text-zinc-200">New Project</span>
           <button onClick={onDismiss} className="text-zinc-500 hover:text-zinc-300 transition-colors"><X size={14} /></button>
         </div>
 

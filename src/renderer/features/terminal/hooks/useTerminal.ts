@@ -413,7 +413,7 @@ export function useTerminal(sessionId: string, containerRef: React.RefObject<HTM
       // Force a full canvas repaint after DOM re-parent — the WebGL/canvas renderer can
       // lose its drawing state when the element moves to a new container.
       if (existing) try { terminal.refresh(0, terminal.rows - 1) } catch {}
-      terminal.focus()
+      try { terminal.focus() } catch {}
 
       const { cols, rows } = terminal
       registerTerminal(sessionId, cols, rows)
@@ -646,12 +646,14 @@ export function useTerminal(sessionId: string, containerRef: React.RefObject<HTM
       if (!useStore.getState().sessions[sessionId]) {
         const poolEntry = terminalPool.get(sessionId)
         terminalPool.delete(sessionId)
-        poolEntry?.rendererAddon?.dispose()
-        poolEntry?.oscDisposables.forEach((d) => d.dispose())
-        searchAddon.dispose()
         terminalRef.current = null
         fitAddonRef.current = null
-        terminal.dispose()
+        // terminal.dispose() automatically disposes all addons registered via loadAddon
+        // (renderer, fit, search, unicode). Manually disposing them first causes a
+        // second dispose() call inside terminal.dispose() which crashes with _isDisposed.
+        try { terminal.dispose() } catch {}
+        // OSC handlers are registered on the parser directly, dispose them after.
+        poolEntry?.oscDisposables.forEach((d) => { try { d.dispose() } catch {} })
         unregisterTerminal(sessionId)
       }
     }
@@ -673,9 +675,9 @@ export function useTerminal(sessionId: string, containerRef: React.RefObject<HTM
   // Update font settings when they change (without remounting)
   useEffect(() => {
     if (terminalRef.current) {
-      terminalRef.current.options.fontSize = settings.fontSize
-      terminalRef.current.options.fontFamily = settings.fontFamily
       try {
+        terminalRef.current.options.fontSize = settings.fontSize
+        terminalRef.current.options.fontFamily = settings.fontFamily
         fitAddonRef.current?.fit()
         terminalRef.current.refresh(0, terminalRef.current.rows - 1)
       } catch {}
@@ -685,9 +687,11 @@ export function useTerminal(sessionId: string, containerRef: React.RefObject<HTM
   // Update terminal theme when app theme or per-session override changes
   useEffect(() => {
     if (terminalRef.current) {
-      terminalRef.current.options.theme = sessionTerminalTheme
-        ? getThemeById(sessionTerminalTheme, appTheme)
-        : resolveTerminalTheme(appTheme)
+      try {
+        terminalRef.current.options.theme = sessionTerminalTheme
+          ? getThemeById(sessionTerminalTheme, appTheme)
+          : resolveTerminalTheme(appTheme)
+      } catch {}
     }
   }, [appTheme, sessionTerminalTheme])
 

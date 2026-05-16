@@ -21,12 +21,13 @@ export function ConfirmCloseProjectModal({ workspaceLabel, onClose, onConfirm }:
           <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300 transition-colors"><X size={14} /></button>
         </div>
         <p className="text-xs text-zinc-400 leading-relaxed">
-          This will kill all sessions and delete all worktrees for{' '}
-          <span className="text-zinc-200 font-medium">{workspaceLabel}</span>. This cannot be undone.
+          All running sessions in{' '}
+          <span className="text-zinc-200 font-medium">{workspaceLabel}</span> will be killed.
+          The project will be saved to Recent Projects so you can reopen it anytime.
         </p>
         <div className="flex gap-2 justify-end pt-1">
           <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
-          <Button size="sm" onClick={onConfirm} className="bg-red-500/20 text-red-400 hover:bg-red-500/30">
+          <Button size="sm" onClick={onConfirm} className="bg-brand-accent/20 text-brand-accent hover:bg-brand-accent/30">
             Close Project
           </Button>
         </div>

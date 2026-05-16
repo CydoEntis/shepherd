@@ -216,7 +216,7 @@ export { listSessions }
 
 export function patchSession(
   sessionId: string,
-  patch: Partial<Pick<SessionMeta, 'name' | 'color' | 'groupId' | 'taskStatus' | 'worktreePath' | 'worktreeBranch' | 'worktreeBaseBranch' | 'projectRoot'>>
+  patch: Partial<Pick<SessionMeta, 'name' | 'color' | 'groupId' | 'taskStatus' | 'worktreePath' | 'worktreeBranch' | 'worktreeBaseBranch' | 'projectRoot' | 'workspaceId'>>
 ): SessionMeta | undefined {
   const updated = updateSessionMeta(sessionId, patch)
   if (updated) broadcastMetaUpdate(updated)

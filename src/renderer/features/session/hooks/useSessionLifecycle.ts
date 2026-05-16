@@ -3,13 +3,13 @@ import { toast } from 'sonner'
 import { ipc } from '../../../lib/ipc'
 import { IPC } from '@shared/ipc-channels'
 import { useStore } from '../../../store/root.store'
-import { listSessions, createSession, killSession } from '../session.service'
+import { listSessions, createSession, killSession, patchSession } from '../session.service'
 import { getWindowInfo, pickFolder } from '../../window/window.service'
-import { loadLayout } from '../persistence.service'
-import { findTabForSession } from '../../layout/layout-tree'
+import { normalizePath } from '../../../lib/utils'
+import { findTabForSession, collectSessionIds } from '../../layout/layout-tree'
 import type { LayoutNode } from '../../layout/layout-tree'
 import { DEFAULT_COLS, DEFAULT_ROWS } from '@shared/constants'
-import type { PersistedLayout, SessionMeta, SessionExitPayload, WindowInitialSessionsPayload, TabReattachedPayload, NotePanePayload } from '@shared/ipc-types'
+import type { SessionMeta, SessionExitPayload, WindowInitialSessionsPayload, TabReattachedPayload, NotePanePayload } from '@shared/ipc-types'
 
 export function useSessionLifecycle(): void {
   const upsertSession = useStore((s) => s.upsertSession)
@@ -19,7 +19,6 @@ export function useSessionLifecycle(): void {
   const setWindowId = useStore((s) => s.setWindowId)
   const loadSettings = useStore((s) => s.loadSettings)
   const loadWorkspaces = useStore((s) => s.loadWorkspaces)
-  const setPendingRestore = useStore((s) => s.setPendingRestore)
   const setIsMainWindow = useStore((s) => s.setIsMainWindow)
   const setWindowMeta = useStore((s) => s.setWindowMeta)
   const setWindowHighlighted = useStore((s) => s.setWindowHighlighted)
@@ -28,91 +27,58 @@ export function useSessionLifecycle(): void {
   const removeNotePaneFromLayout = useStore((s) => s.removeNotePaneFromLayout)
   const addDetachedNoteId = useStore((s) => s.addDetachedNoteId)
   const removeDetachedNoteId = useStore((s) => s.removeDetachedNoteId)
-  const layoutRef = useRef<PersistedLayout | null | 'loading'>('loading')
   const isMainRef = useRef<boolean | null>(null)
   // Tracks running sessions found at startup — 'pending' until listSessions resolves
   const liveSessionsRef = useRef<SessionMeta[] | 'pending'>('pending')
 
-  // Auto-create a plain shell when the user kills the last session.
-  // Only fires when tab count drops from >1 → 1 (startup and restore are excluded
-  // because tabOrder starts at 1 and only grows, so prevLength is never >1 initially).
-  useEffect(() => {
-    let prevTabCount = useStore.getState().tabOrder.length
-    return useStore.subscribe((state) => {
-      const curr = state.tabOrder.length
-      if (
-        curr === 1 &&
-        state.tabOrder[0] === '__root__' &&
-        prevTabCount > 1 &&
-        state.isMainWindow &&
-        !state.isRestoringLayout
-      ) {
-        const { settings } = useStore.getState()
-        const cwd = settings.projectRoot || undefined
-        createSession({
-          name: 'Home',
-          cwd,
-          cols: DEFAULT_COLS,
-          rows: DEFAULT_ROWS,
-        }).then((meta) => {
-          useStore.getState().upsertSession(meta)
-          useStore.getState().addTab(meta.sessionId)
-        }).catch(() => {})
-      }
-      prevTabCount = curr
-    })
-  }, [])
-
   useEffect(() => {
     loadSettings()
     loadWorkspaces()
+
+    const wireUpLiveSessions = (): void => {
+      // Wait for both async sources before deciding
+      if (isMainRef.current === null || liveSessionsRef.current === 'pending') return
+      const live = liveSessionsRef.current as SessionMeta[]
+      if (live.length === 0 || !isMainRef.current) return
+      // HMR/renderer-reload or background PTY survival: wire existing running sessions back in
+      const { workspaces } = useStore.getState()
+      live.forEach((m) => {
+        addTab(m.sessionId)
+        // Migrate untagged sessions: tag them with any matching named workspace
+        if (!m.workspaceId) {
+          const sessionPath = normalizePath(m.projectRoot ?? m.cwd)
+          const matchingWs = workspaces.find((w) => {
+            if (w.isRoot || !w.rootPath) return false
+            const wsPath = normalizePath(w.rootPath)
+            return sessionPath === wsPath || sessionPath.startsWith(wsPath + '/')
+          })
+          if (matchingWs) {
+            patchSession({ sessionId: m.sessionId, workspaceId: matchingWs.id })
+              .then((updated) => useStore.getState().upsertSession(updated))
+              .catch(() => {})
+          }
+        }
+      })
+    }
+
     getWindowInfo().then(({ windowId, isMainWindow }) => {
       setWindowId(windowId)
       setIsMainWindow(isMainWindow)
       setWindowHighlighted(false)
+      // Fallback: WINDOW_INITIAL_SESSIONS is sent on did-finish-load, which fires
+      // before React's useEffect registers the listener — the event can be missed.
+      // getWindowInfo() is an invoke (request-response) so it always resolves.
+      if (isMainRef.current === null) {
+        isMainRef.current = isMainWindow
+        wireUpLiveSessions()
+      }
     })
-
-    const maybeShowRestore = (): void => {
-      // Wait for all three async sources to resolve before deciding
-      if (layoutRef.current === 'loading' || isMainRef.current === null || liveSessionsRef.current === 'pending') return
-      const live = liveSessionsRef.current as SessionMeta[]
-      if (live.length > 0) {
-        // HMR/renderer-reload: only the main window wires up all running sessions
-        if (isMainRef.current) live.forEach((m) => addTab(m.sessionId))
-        return
-      }
-      if (isMainRef.current && layoutRef.current && layoutRef.current.sessions.length > 0) {
-        setPendingRestore(layoutRef.current)
-        return
-      }
-      // Nothing to restore → auto-open a plain shell so the user lands in a working state.
-      // No agentCommand here: plain shells get OSC 7 shell integration auto-injected,
-      // so the file tree tracks cd in real time without any manual profile setup.
-      if (isMainRef.current) {
-        const { settings } = useStore.getState()
-        const cwd = settings.projectRoot || undefined
-        createSession({
-          name: 'Home',
-          cwd,
-          cols: DEFAULT_COLS,
-          rows: DEFAULT_ROWS,
-        }).then((meta) => {
-          useStore.getState().upsertSession(meta)
-          useStore.getState().addTab(meta.sessionId)
-        }).catch(() => {})
-      }
-    }
 
     listSessions().then((sessions) => {
       const running = sessions.filter((m) => m.status === 'running')
       sessions.forEach((meta) => upsertSession(meta))
       liveSessionsRef.current = running
-      maybeShowRestore()
-    })
-
-    loadLayout().then((layout) => {
-      layoutRef.current = layout
-      maybeShowRestore()
+      wireUpLiveSessions()
     })
 
     const offInitial = ipc.on(IPC.WINDOW_INITIAL_SESSIONS, (payload) => {
@@ -123,7 +89,7 @@ export function useSessionLifecycle(): void {
       sessionIds.forEach((sessionId) => addTab(sessionId))
       isMainRef.current = isMain ?? sessionIds.length === 0
       setIsMainWindow(isMainRef.current)
-      maybeShowRestore()
+      wireUpLiveSessions()
     })
 
     const offMeta = ipc.on(IPC.SESSION_META_UPDATE, (payload) => {
@@ -156,9 +122,24 @@ export function useSessionLifecycle(): void {
       const sessionName = session.name
       const isAgent = !!session.agentCommand
       markSessionExited(sessionId, exitCode)
+
+      if (!isAgent) {
+        // Plain shells: close the pane silently so the user lands on the adjacent
+        // terminal (multi-pane split) or triggers auto-create (single-pane tab).
+        const { paneTree } = useStore.getState()
+        const tabId = findTabForSession(paneTree, sessionId)
+        if (tabId) {
+          const tree = paneTree[tabId]
+          if (tree && collectSessionIds(tree).length > 1) {
+            removePaneBySessionId(sessionId)
+          } else {
+            useStore.getState().closePane(tabId, sessionId)
+          }
+        }
+        return
+      }
+
       removePaneBySessionId(sessionId)
-      // Only show exit toasts for agent sessions — plain shells exit silently
-      if (!isAgent) return
       if (exitCode === 0) {
         toast.success(`${sessionName} finished`)
       } else {

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Plus, FolderOpen, X, Zap, ShieldCheck } from 'lucide-react'
+import { Plus, FolderOpen, X, Zap, ShieldCheck, GitBranch } from 'lucide-react'
 import { Button } from '../../../components/ui/button'
 import {
   Dialog,
@@ -42,6 +42,9 @@ type PresetId = (typeof PRESETS)[number]['id']
 
 const NO_GROUP = '__none__'
 
+// Checked once at module load so the result is ready before the dialog ever opens.
+const sbxCheck = checkSbxAvailable().catch(() => false)
+
 const schema = z.object({
   name: z.string().min(1, 'Name is required').max(64),
   preset: z.string(),
@@ -67,6 +70,7 @@ export function NewSessionForm({ variant = 'icon' }: { variant?: 'icon' | 'sideb
   const [workspacePath, setWorkspacePath] = useState<string | null>(null)
   const [activeTaskWorkspaceId, setActiveTaskWorkspaceId] = useState<string | undefined>(undefined)
   const [splitTarget, setSplitTarget] = useState<{ tabId: string; sessionId: string; direction: 'horizontal' | 'vertical' } | null>(null)
+  const [useWorktree, setUseWorktree] = useState(false)
   const upsertSession = useStore((s) => s.upsertSession)
   const addTab = useStore((s) => s.addTab)
   const splitPane = useStore((s) => s.splitPane)
@@ -116,11 +120,13 @@ export function NewSessionForm({ variant = 'icon' }: { variant?: 'icon' | 'sideb
       setSkipSandbox(false)
       setUseSandboxMode(false)
       setSelectedPreset('claude')
-      checkSbxAvailable().then(setSbxAvailable).catch(() => {})
+      setUseWorktree(false)
+      void sbxCheck.then(setSbxAvailable)
     } else {
       setSplitTarget(null)
       setWorkspacePath(null)
       setActiveTaskWorkspaceId(undefined)
+      setUseWorktree(false)
     }
   }, [open])
 
@@ -176,6 +182,35 @@ export function NewSessionForm({ variant = 'icon' }: { variant?: 'icon' | 'sideb
         })
         upsertSession(meta)
         addTab(meta.sessionId)
+      } else if (useWorktree && selectedDir) {
+        const branchName = `orbit/${slugify(data.name.trim() || 'session')}-${Date.now().toString(36).slice(-4)}`
+        let worktreeResult: { worktreePath: string; branchName: string; baseBranch: string }
+        try {
+          worktreeResult = await createWorktree(selectedDir, branchName)
+        } catch (err) {
+          toast.error(`Worktree failed: ${err instanceof Error ? err.message : String(err)}`)
+          return
+        }
+        const groupId = selectedGroupId === NO_GROUP ? undefined : selectedGroupId || undefined
+        const workspaceId = activeWorkspaceId !== ROOT_WORKSPACE_ID ? activeWorkspaceId : undefined
+        const meta = await createSession({
+          name: data.name,
+          agentCommand,
+          cwd: worktreeResult.worktreePath,
+          cols: DEFAULT_COLS,
+          rows: DEFAULT_ROWS,
+          groupId,
+          workspaceId,
+          yoloMode: yoloMode || undefined,
+          noSandbox: skipSandbox || undefined,
+          useSandbox: useSandboxMode || undefined,
+          worktreePath: worktreeResult.worktreePath,
+          worktreeBranch: worktreeResult.branchName,
+          worktreeBaseBranch: worktreeResult.baseBranch,
+          projectRoot: selectedDir
+        })
+        upsertSession(meta)
+        addTab(meta.sessionId)
       } else if (splitTarget) {
         const meta = await createSession({
           name: data.name,
@@ -215,6 +250,7 @@ export function NewSessionForm({ variant = 'icon' }: { variant?: 'icon' | 'sideb
       setYoloMode(false)
       setSkipSandbox(false)
       setUseSandboxMode(false)
+      setUseWorktree(false)
       setWorkspacePath(null)
       setActiveTaskWorkspaceId(undefined)
       setSplitTarget(null)
@@ -363,6 +399,25 @@ export function NewSessionForm({ variant = 'icon' }: { variant?: 'icon' | 'sideb
                 <FolderOpen size={14} />
               </button>
             </div>
+          </div>
+        )}
+
+        {!isWorkspaceMode && !isSplitMode && selectedPreset !== 'shell' && !!selectedDir && (
+          <div className={cn(
+            'flex items-center justify-between px-3 py-2.5 rounded-md border transition-colors',
+            useWorktree ? 'border-brand-accent/40 bg-brand-accent/5' : 'border-brand-panel'
+          )}>
+            <div className="flex items-center gap-2 min-w-0">
+              <GitBranch size={12} className={cn('flex-shrink-0', useWorktree ? 'text-brand-accent' : 'text-zinc-500')} />
+              <span className={cn('text-xs font-medium', useWorktree ? 'text-brand-accent' : 'text-zinc-300')}>
+                Git Worktree
+              </span>
+              <span className="text-xs text-zinc-600 truncate">— isolated branch</span>
+            </div>
+            <Switch
+              checked={useWorktree}
+              onCheckedChange={setUseWorktree}
+            />
           </div>
         )}
 

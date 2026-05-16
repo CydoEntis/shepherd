@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useMemo } from 'react'
+﻿import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { FolderOpen, GitBranch } from 'lucide-react'
@@ -7,6 +7,8 @@ import { AppSettingsSchema, DEFAULT_SETTINGS } from '@shared/ipc-types'
 import type { AppSettings } from '@shared/ipc-types'
 import { pickFolder, pickFile } from '../../window/window.service'
 import { detectShells } from '../../fs/fs.service'
+import { killSession } from '../../session/session.service'
+import { clearLayout } from '../../session/persistence.service'
 import { Button } from '../../../components/ui/button'
 import { Input } from '../../../components/ui/input'
 import { Label } from '../../../components/ui/label'
@@ -148,6 +150,8 @@ export function SettingsForm({ onClose }: Props): JSX.Element {
   const setTerminalTheme = useStore((s) => s.setTerminalTheme)
   const activeSessionId = useStore((s) => s.focusedSessionId ?? s.activeSessionId)
   const activeTerminalTheme = activeSessionId ? (terminalThemes[activeSessionId] ?? '') : ''
+  const resetAllSessions = useStore((s) => s.resetAllSessions)
+  const [confirmClear, setConfirmClear] = useState(false)
 
   const { register, handleSubmit, setValue, watch } = useForm<AppSettings>({
     resolver: zodResolver(AppSettingsSchema),
@@ -194,6 +198,19 @@ export function SettingsForm({ onClose }: Props): JSX.Element {
     const picked = await pickFolder()
     if (picked !== null) setValue('defaultSessionDir', picked)
   }
+
+  const handleClearSessions = useCallback(async (): Promise<void> => {
+    const { sessions } = useStore.getState()
+    await Promise.all(
+      Object.values(sessions)
+        .filter((s) => s.status === 'running')
+        .map((s) => killSession(s.sessionId).catch(() => {}))
+    )
+    resetAllSessions()
+    await clearLayout().catch(() => {})
+    setConfirmClear(false)
+    toast.success('All sessions cleared')
+  }, [resetAllSessions])
 
   const onSubmit = async (data: AppSettings): Promise<void> => {
     await updateSettings(data)
@@ -422,6 +439,44 @@ export function SettingsForm({ onClose }: Props): JSX.Element {
               checked={sandboxYoloMode ?? true}
               onCheckedChange={(v) => setValue('sandboxYoloMode', v === true)}
             />
+          </div>
+        </section>
+
+        <div className="h-px bg-border" />
+
+        <section className="flex flex-col gap-3">
+          <p className="text-[10px] font-semibold text-red-500/60 uppercase tracking-wider">Danger Zone</p>
+          <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-0.5">
+              <Label className="text-sm text-foreground font-normal">Clear all sessions</Label>
+              <span className="text-xs text-zinc-500">Kill all running terminals and reset to a blank slate</span>
+            </div>
+            {confirmClear ? (
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setConfirmClear(false)}
+                  className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleClearSessions()}
+                  className="text-xs px-3 py-1.5 rounded-md bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+                >
+                  Confirm clear
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmClear(true)}
+                className="text-xs px-3 py-1.5 rounded-md border border-red-500/30 text-red-400/80 hover:border-red-500/50 hover:text-red-400 transition-colors flex-shrink-0"
+              >
+                Clear all
+              </button>
+            )}
           </div>
         </section>
 

@@ -60,6 +60,7 @@ export interface SessionSlice {
   addDetachedNoteId: (noteId: string) => void
   removeDetachedNoteId: (noteId: string) => void
   resetRootPane: () => void
+  resetAllSessions: () => void
 
   openFilesList: string[]
   addOpenFile: (path: string) => void
@@ -136,9 +137,9 @@ export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', neve
       delete state.sessions[sessionId]
       const newTree = removeTerminalLeaf(tree, sessionId)
       if (!newTree) {
-        if (tabId === '__root__') { state.paneTree[tabId] = makeHomeLeaf() } else {
-          state.tabOrder = state.tabOrder.filter((id) => id !== tabId)
-          delete state.paneTree[tabId]
+        if (tabId === '__root__') {
+          state.paneTree[tabId] = makeHomeLeaf()
+        } else {
           if (state.activeSessionId === tabId) {
             const idx = state.tabOrder.indexOf(tabId)
             const realTabs = state.tabOrder.filter((id) => id !== '__root__' && id !== tabId)
@@ -150,6 +151,10 @@ export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', neve
         }
       } else {
         state.paneTree[tabId] = newTree
+        if (state.focusedSessionId === sessionId) {
+          const remaining = collectSessionIds(newTree)
+          state.focusedSessionId = remaining[0] ?? null
+        }
       }
     }),
 
@@ -205,6 +210,10 @@ export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', neve
         }
       } else {
         state.paneTree[tabId] = newTree
+        if (state.focusedSessionId === sessionId) {
+          const remaining = collectSessionIds(newTree)
+          state.focusedSessionId = remaining[0] ?? null
+        }
       }
     }),
 
@@ -523,6 +532,18 @@ export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', neve
   resetRootPane: () =>
     set((state) => {
       state.paneTree['__root__'] = makeHomeLeaf() as LayoutNode
+    }),
+
+  resetAllSessions: () =>
+    set((state) => {
+      state.sessions = {}
+      state.tabOrder = ['__root__']
+      state.activeSessionId = null
+      state.focusedSessionId = null
+      state.focusedLeafId = null
+      state.paneTree = { '__root__': makeHomeLeaf() as LayoutNode }
+      state.pendingRestore = null
+      state.isRestoringLayout = false
     }),
 
   addOpenFile: (path) =>
