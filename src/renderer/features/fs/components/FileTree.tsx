@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { ChevronRight, ChevronDown, File, FileCode, FileJson, FileText, FileImage, Folder, FolderOpen } from 'lucide-react'
 import { createPortal } from 'react-dom'
-import { readDir, getGitStatus, renameEntry, trashEntry, writeFile, mkdir, findFiles } from '../fs.service'
+import { readDir, getGitStatus, renameEntry, trashEntry, writeFile, mkdir, findFiles, copyFile } from '../fs.service'
 import { FileTreeContextMenu } from './FileTreeContextMenu'
 import { useInstalledEditors } from '../hooks/useInstalledEditors'
 import { useLayoutDnd } from '../../layout/dnd/LayoutDndContext'
@@ -176,9 +176,12 @@ interface TreeNodeProps {
   onCreatingChange: (v: string) => void
   onCreateSubmit: (name: string) => void
   onCreateCancel: () => void
+  extDropDir: string | null
+  onExternalDragOver: (dirPath: string) => void
+  onExternalDrop: (dirPath: string, files: File[]) => void
 }
 
-function TreeNode({ entry, depth, gitMap, projectRoot, activeFilePath, focusedPath, renamingPath, creating, creatingValue, expanded, childrenMap, onFileClick, onContextMenu, onRenameSubmit, onRenameCancel, onToggle, onQuickNew, onLoadChildren, onSetFocus, onCreatingChange, onCreateSubmit, onCreateCancel }: TreeNodeProps): JSX.Element {
+function TreeNode({ entry, depth, gitMap, projectRoot, activeFilePath, focusedPath, renamingPath, creating, creatingValue, expanded, childrenMap, onFileClick, onContextMenu, onRenameSubmit, onRenameCancel, onToggle, onQuickNew, onLoadChildren, onSetFocus, onCreatingChange, onCreateSubmit, onCreateCancel, extDropDir, onExternalDragOver, onExternalDrop }: TreeNodeProps): JSX.Element {
   const [renameValue, setRenameValue] = useState(entry.name)
   const inputRef = useRef<HTMLInputElement>(null)
   const { startDrag, endDrag } = useLayoutDnd()
@@ -227,7 +230,7 @@ function TreeNode({ entry, depth, gitMap, projectRoot, activeFilePath, focusedPa
   const isActive = !entry.isDirectory && activeFilePath !== null &&
     norm(entry.path) === norm(activeFilePath)
 
-  const childProps = { gitMap, projectRoot, activeFilePath, focusedPath, renamingPath, creating, creatingValue, expanded, childrenMap, onFileClick, onContextMenu, onRenameSubmit, onRenameCancel, onToggle, onQuickNew, onLoadChildren, onSetFocus, onCreatingChange, onCreateSubmit, onCreateCancel }
+  const childProps = { gitMap, projectRoot, activeFilePath, focusedPath, renamingPath, creating, creatingValue, expanded, childrenMap, onFileClick, onContextMenu, onRenameSubmit, onRenameCancel, onToggle, onQuickNew, onLoadChildren, onSetFocus, onCreatingChange, onCreateSubmit, onCreateCancel, extDropDir, onExternalDragOver, onExternalDrop }
 
   return (
     <>
@@ -242,11 +245,23 @@ function TreeNode({ entry, depth, gitMap, projectRoot, activeFilePath, focusedPa
           document.dispatchEvent(new CustomEvent('acc:file-drag-start'))
         } : undefined}
         onDragEnd={!entry.isDirectory ? () => endDrag() : undefined}
+        onDragOver={entry.isDirectory ? (e) => {
+          if (!e.dataTransfer.types.includes('Files')) return
+          e.preventDefault(); e.stopPropagation()
+          onExternalDragOver(norm(entry.path))
+        } : undefined}
+        onDrop={entry.isDirectory ? (e) => {
+          if (!e.dataTransfer.types.includes('Files')) return
+          e.preventDefault(); e.stopPropagation()
+          onExternalDrop(norm(entry.path), Array.from(e.dataTransfer.files))
+        } : undefined}
         className={cn(
           'w-full flex items-center gap-1.5 py-1 text-left transition-colors rounded-sm group',
-          isFocused
-            ? 'bg-brand-accent/15 ring-1 ring-inset ring-brand-accent/30'
-            : isActive ? 'bg-brand-panel/60' : 'hover:bg-brand-panel/40'
+          extDropDir === norm(entry.path)
+            ? 'bg-brand-accent/20 ring-1 ring-inset ring-brand-accent/50'
+            : isFocused
+              ? 'bg-brand-accent/15 ring-1 ring-inset ring-brand-accent/30'
+              : isActive ? 'bg-brand-panel/60' : 'hover:bg-brand-panel/40'
         )}
         style={{ paddingLeft: `${6 + depth * 12}px`, paddingRight: 8 }}
         onContextMenu={(e) => { e.preventDefault(); onContextMenu(e, entry, rel) }}
@@ -353,6 +368,7 @@ export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileC
   const [deletingEntry, setDeletingEntry] = useState<FsEntry | null>(null)
   const [creating, setCreating] = useState<{ parentDir: string; type: 'file' | 'folder' } | null>(null)
   const [creatingValue, setCreatingValue] = useState('')
+  const [extDropDir, setExtDropDir] = useState<string | null>(null)
   const [focusedPath, _setFocusedPath] = useState<string | null>(null)
   const treeBodyRef = useRef<HTMLDivElement>(null)
   const focusedPathRef = useRef<string | null>(null)
@@ -606,6 +622,17 @@ export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileC
     setCreatingValue('')
   }, [childrenMap, expanded, projectRoot, loadChildren])
 
+  const handleExternalDrop = useCallback(async (dirPath: string, files: File[]) => {
+    setExtDropDir(null)
+    for (const file of files) {
+      const src = (file as unknown as { path: string }).path
+      if (!src) continue
+      const dest = dirPath.replace(/\/$/, '') + '/' + file.name
+      try { await copyFile(src, dest) } catch {}
+    }
+    await loadRoot()
+  }, [loadRoot])
+
   useEffect(() => {
     const handler = (e: Event): void => {
       const { parentDir, type } = (e as CustomEvent<{ parentDir: string; type: 'file' | 'folder' }>).detail
@@ -668,11 +695,21 @@ export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileC
     )
   }
 
-  const nodeProps = { gitMap, projectRoot, activeFilePath, focusedPath, renamingPath, creating, creatingValue, expanded, childrenMap, onFileClick, onContextMenu: handleContextMenu, onRenameSubmit: handleRenameSubmit, onRenameCancel: () => setRenamingPath(null), onToggle: handleToggle, onQuickNew: handleQuickNew, onLoadChildren: loadChildren, onSetFocus: setFocusedPath, onCreatingChange: setCreatingValue, onCreateSubmit: handleCreateConfirm, onCreateCancel: () => { setCreating(null); setCreatingValue('') } }
+  const nodeProps = { gitMap, projectRoot, activeFilePath, focusedPath, renamingPath, creating, creatingValue, expanded, childrenMap, onFileClick, onContextMenu: handleContextMenu, onRenameSubmit: handleRenameSubmit, onRenameCancel: () => setRenamingPath(null), onToggle: handleToggle, onQuickNew: handleQuickNew, onLoadChildren: loadChildren, onSetFocus: setFocusedPath, onCreatingChange: setCreatingValue, onCreateSubmit: handleCreateConfirm, onCreateCancel: () => { setCreating(null); setCreatingValue('') }, extDropDir, onExternalDragOver: setExtDropDir, onExternalDrop: handleExternalDrop }
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      <div ref={treeBodyRef} className="flex-1 overflow-y-auto py-1 px-1">
+      <div
+        ref={treeBodyRef}
+        className="flex-1 overflow-y-auto py-1 px-1"
+        onDragOver={(e) => { if (e.dataTransfer.types.includes('Files')) e.preventDefault() }}
+        onDragLeave={(e) => { if (!treeBodyRef.current?.contains(e.relatedTarget as Node)) setExtDropDir(null) }}
+        onDrop={(e) => {
+          if (!e.dataTransfer.types.includes('Files')) return
+          e.preventDefault()
+          void handleExternalDrop(projectRoot, Array.from(e.dataTransfer.files))
+        }}
+      >
         {creating?.parentDir === projectRoot && (
           <InlineCreateRow
             type={creating.type}
