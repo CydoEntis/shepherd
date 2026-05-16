@@ -63,7 +63,7 @@ const SelectContent = React.forwardRef<
     <SelectPrimitive.Content
       ref={ref}
       className={cn(
-        'relative z-[10000] min-w-[8rem] overflow-hidden rounded border border-brand-panel bg-brand-surface shadow-xl data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
+        'relative z-[10000] max-h-[var(--radix-select-content-available-height)] min-w-[8rem] overflow-hidden rounded border border-brand-panel bg-brand-surface shadow-xl data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
         position === 'popper' &&
           'data-[side=bottom]:translate-y-1 data-[side=top]:-translate-y-1 w-[var(--radix-select-trigger-width)]',
         className
@@ -72,7 +72,12 @@ const SelectContent = React.forwardRef<
       {...props}
     >
       <SelectScrollUpButton />
-      <SelectPrimitive.Viewport className="p-1">
+      <SelectPrimitive.Viewport
+        className={cn(
+          'p-1',
+          position === 'popper' && 'h-[var(--radix-select-viewport-height)] w-full min-w-[var(--radix-select-trigger-width)]'
+        )}
+      >
         {children}
       </SelectPrimitive.Viewport>
       <SelectScrollDownButton />
