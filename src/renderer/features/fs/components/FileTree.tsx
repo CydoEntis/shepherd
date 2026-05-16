@@ -55,6 +55,45 @@ interface CtxTarget {
   rel: string
 }
 
+interface InlineCreateRowProps {
+  type: 'file' | 'folder'
+  depth: number
+  value: string
+  onChange: (v: string) => void
+  onSubmit: (name: string) => void
+  onCancel: () => void
+}
+
+function InlineCreateRow({ type, depth, value, onChange, onSubmit, onCancel }: InlineCreateRowProps): JSX.Element {
+  const inputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => { setTimeout(() => inputRef.current?.focus(), 0) }, [])
+  return (
+    <div
+      className="w-full flex items-center gap-1.5 py-1 rounded-sm bg-brand-accent/10 ring-1 ring-inset ring-brand-accent/20"
+      style={{ paddingLeft: `${6 + depth * 12}px`, paddingRight: 8 }}
+    >
+      <span className="flex-shrink-0 w-3" />
+      <span className="flex-shrink-0 text-zinc-400 w-3.5 flex items-center">
+        {type === 'folder' ? <Folder size={13} className="text-yellow-500/70" /> : <File size={13} />}
+      </span>
+      <Input
+        ref={inputRef}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          e.stopPropagation()
+          if (e.key === 'Enter') { const t = value.trim(); if (t) onSubmit(t) }
+          else if (e.key === 'Escape') onCancel()
+        }}
+        onBlur={onCancel}
+        onClick={(e) => e.stopPropagation()}
+        placeholder={type === 'file' ? 'filename.ts' : 'folder-name'}
+        className="flex-1 h-6 px-1 text-xs min-w-0"
+      />
+    </div>
+  )
+}
+
 interface TreeNodeProps {
   entry: FsEntry
   depth: number
@@ -63,6 +102,8 @@ interface TreeNodeProps {
   activeFilePath: string | null
   focusedPath: string | null
   renamingPath: string | null
+  creating: { parentDir: string; type: 'file' | 'folder' } | null
+  creatingValue: string
   expanded: Set<string>
   childrenMap: Map<string, FsEntry[]>
   onFileClick: (path: string, xy: string | undefined) => void
@@ -73,9 +114,12 @@ interface TreeNodeProps {
   onQuickNew: (parentDir: string, type: 'file' | 'folder') => void
   onLoadChildren: (path: string) => void
   onSetFocus: (path: string) => void
+  onCreatingChange: (v: string) => void
+  onCreateSubmit: (name: string) => void
+  onCreateCancel: () => void
 }
 
-function TreeNode({ entry, depth, gitMap, projectRoot, activeFilePath, focusedPath, renamingPath, expanded, childrenMap, onFileClick, onContextMenu, onRenameSubmit, onRenameCancel, onToggle, onQuickNew, onLoadChildren, onSetFocus }: TreeNodeProps): JSX.Element {
+function TreeNode({ entry, depth, gitMap, projectRoot, activeFilePath, focusedPath, renamingPath, creating, creatingValue, expanded, childrenMap, onFileClick, onContextMenu, onRenameSubmit, onRenameCancel, onToggle, onQuickNew, onLoadChildren, onSetFocus, onCreatingChange, onCreateSubmit, onCreateCancel }: TreeNodeProps): JSX.Element {
   const [renameValue, setRenameValue] = useState(entry.name)
   const inputRef = useRef<HTMLInputElement>(null)
   const { startDrag, endDrag } = useLayoutDnd()
@@ -124,7 +168,7 @@ function TreeNode({ entry, depth, gitMap, projectRoot, activeFilePath, focusedPa
   const isActive = !entry.isDirectory && activeFilePath !== null &&
     norm(entry.path) === norm(activeFilePath)
 
-  const childProps = { gitMap, projectRoot, activeFilePath, focusedPath, renamingPath, expanded, childrenMap, onFileClick, onContextMenu, onRenameSubmit, onRenameCancel, onToggle, onQuickNew, onLoadChildren, onSetFocus }
+  const childProps = { gitMap, projectRoot, activeFilePath, focusedPath, renamingPath, creating, creatingValue, expanded, childrenMap, onFileClick, onContextMenu, onRenameSubmit, onRenameCancel, onToggle, onQuickNew, onLoadChildren, onSetFocus, onCreatingChange, onCreateSubmit, onCreateCancel }
 
   return (
     <>
@@ -179,9 +223,23 @@ function TreeNode({ entry, depth, gitMap, projectRoot, activeFilePath, focusedPa
           </span>
         )}
       </div>
-      {isExpanded && children && children.map((child) => (
-        <TreeNode key={child.path} entry={child} depth={depth + 1} {...childProps} />
-      ))}
+      {isExpanded && (
+        <>
+          {creating?.parentDir === norm(entry.path) && (
+            <InlineCreateRow
+              type={creating.type}
+              depth={depth + 1}
+              value={creatingValue}
+              onChange={onCreatingChange}
+              onSubmit={onCreateSubmit}
+              onCancel={onCreateCancel}
+            />
+          )}
+          {children && children.map((child) => (
+            <TreeNode key={child.path} entry={child} depth={depth + 1} {...childProps} />
+          ))}
+        </>
+      )}
     </>
   )
 }
@@ -218,55 +276,6 @@ function DeleteConfirm({ entry, onConfirm, onCancel }: { entry: FsEntry; onConfi
   )
 }
 
-function CreateItemDialog({ parentDir, type, onConfirm, onCancel }: {
-  parentDir: string
-  type: 'file' | 'folder'
-  onConfirm: (name: string) => void
-  onCancel: () => void
-}): JSX.Element {
-  const [value, setValue] = useState('')
-  const inputRef = useRef<HTMLInputElement>(null)
-  useEffect(() => { setTimeout(() => inputRef.current?.focus(), 0) }, [])
-  const submit = (): void => { const name = value.trim(); if (name) onConfirm(name) }
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center"
-      onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel() }}
-    >
-      <div className="absolute inset-0 bg-black/50" />
-      <div className="relative bg-brand-surface border border-brand-panel/60 rounded-lg shadow-2xl w-72 p-5 flex flex-col gap-4">
-        <span className="text-sm font-semibold text-zinc-200">
-          {type === 'file' ? 'New File' : 'New Folder'}
-        </span>
-        <p className="text-[10px] text-zinc-600 -mt-2 truncate">{parentDir}</p>
-        <input
-          ref={inputRef}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') submit(); else if (e.key === 'Escape') onCancel() }}
-          placeholder={type === 'file' ? 'filename.ts' : 'folder-name'}
-          className="w-full px-3 py-1.5 text-xs bg-brand-bg border border-brand-panel/60 rounded text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-brand-accent/50"
-        />
-        <div className="flex gap-2 justify-end">
-          <button
-            onClick={onCancel}
-            className="px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors rounded border border-brand-panel hover:border-zinc-600"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={submit}
-            disabled={!value.trim()}
-            className="px-3 py-1.5 text-xs bg-brand-accent/20 text-brand-accent border border-brand-accent/30 hover:bg-brand-accent/30 transition-colors rounded disabled:opacity-40"
-          >
-            Create
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body
-  )
-}
 
 interface Props {
   projectRoot: string
@@ -284,6 +293,7 @@ export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileC
   const [renamingPath, setRenamingPath] = useState<string | null>(null)
   const [deletingEntry, setDeletingEntry] = useState<FsEntry | null>(null)
   const [creating, setCreating] = useState<{ parentDir: string; type: 'file' | 'folder' } | null>(null)
+  const [creatingValue, setCreatingValue] = useState('')
   const [focusedPath, _setFocusedPath] = useState<string | null>(null)
   const treeBodyRef = useRef<HTMLDivElement>(null)
   const focusedPathRef = useRef<string | null>(null)
@@ -508,6 +518,7 @@ export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileC
     if (!creating) return
     const target = creating
     setCreating(null)
+    setCreatingValue('')
     const fullPath = target.parentDir.replace(/\/$/, '') + '/' + name
     try {
       if (target.type === 'folder') {
@@ -521,13 +532,28 @@ export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileC
   }, [creating, loadRoot, onFileClick])
 
   const handleQuickNew = useCallback((parentDir: string, type: 'file' | 'folder') => {
-    setCreating({ parentDir, type })
-  }, [])
+    const key = norm(parentDir)
+    if (key !== projectRoot) {
+      if (!childrenMap.has(key)) loadChildren(parentDir)
+      if (!expanded.has(key)) {
+        setExpanded(prev => {
+          const next = new Set([...prev, key])
+          saveExpanded(projectRoot, next)
+          return next
+        })
+      }
+    }
+    setCreating({ parentDir: key, type })
+    setCreatingValue('')
+  }, [childrenMap, expanded, projectRoot, loadChildren])
 
   useEffect(() => {
     const handler = (e: Event): void => {
       const { parentDir, type } = (e as CustomEvent<{ parentDir: string; type: 'file' | 'folder' }>).detail
-      if (norm(parentDir) === projectRoot) setCreating({ parentDir, type })
+      if (norm(parentDir) === projectRoot) {
+        setCreating({ parentDir: projectRoot, type })
+        setCreatingValue('')
+      }
     }
     document.addEventListener('acc:new-file-at-root', handler)
     return () => document.removeEventListener('acc:new-file-at-root', handler)
@@ -580,11 +606,21 @@ export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileC
     )
   }
 
-  const nodeProps = { gitMap, projectRoot, activeFilePath, focusedPath, renamingPath, expanded, childrenMap, onFileClick, onContextMenu: handleContextMenu, onRenameSubmit: handleRenameSubmit, onRenameCancel: () => setRenamingPath(null), onToggle: handleToggle, onQuickNew: handleQuickNew, onLoadChildren: loadChildren, onSetFocus: setFocusedPath }
+  const nodeProps = { gitMap, projectRoot, activeFilePath, focusedPath, renamingPath, creating, creatingValue, expanded, childrenMap, onFileClick, onContextMenu: handleContextMenu, onRenameSubmit: handleRenameSubmit, onRenameCancel: () => setRenamingPath(null), onToggle: handleToggle, onQuickNew: handleQuickNew, onLoadChildren: loadChildren, onSetFocus: setFocusedPath, onCreatingChange: setCreatingValue, onCreateSubmit: handleCreateConfirm, onCreateCancel: () => { setCreating(null); setCreatingValue('') } }
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
       <div ref={treeBodyRef} className="flex-1 overflow-y-auto py-1 px-1">
+        {creating?.parentDir === projectRoot && (
+          <InlineCreateRow
+            type={creating.type}
+            depth={0}
+            value={creatingValue}
+            onChange={setCreatingValue}
+            onSubmit={handleCreateConfirm}
+            onCancel={() => { setCreating(null); setCreatingValue('') }}
+          />
+        )}
         {rootEntries.map((entry) => (
           <TreeNode key={entry.path} entry={entry} depth={0} {...nodeProps} />
         ))}
@@ -612,15 +648,6 @@ export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileC
           entry={deletingEntry}
           onConfirm={handleDeleteConfirm}
           onCancel={() => setDeletingEntry(null)}
-        />
-      )}
-
-      {creating && (
-        <CreateItemDialog
-          parentDir={creating.parentDir}
-          type={creating.type}
-          onConfirm={handleCreateConfirm}
-          onCancel={() => setCreating(null)}
         />
       )}
     </div>
