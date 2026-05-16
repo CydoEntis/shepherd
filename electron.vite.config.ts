@@ -1,19 +1,7 @@
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
-import { resolve, join } from 'path'
+import { resolve } from 'path'
 import { createRequire } from 'module'
-import type { Plugin } from 'vite'
-
-function monacoThemesPlugin(): Plugin {
-  return {
-    name: 'monaco-themes-resolver',
-    resolveId(id: string) {
-      if (id.startsWith('monaco-themes/themes/')) {
-        return join(__dirname, 'node_modules', id)
-      }
-    }
-  }
-}
 
 const _require = createRequire(import.meta.url)
 const pkg = _require('./package.json') as { version: string }
@@ -50,7 +38,7 @@ export default defineConfig({
   },
   renderer: {
     root: 'src/renderer',
-    plugins: [react(), monacoThemesPlugin()],
+    plugins: [react()],
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version)
     },
