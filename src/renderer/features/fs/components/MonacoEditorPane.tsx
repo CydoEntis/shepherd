@@ -10,6 +10,7 @@ import { cn } from '../../../lib/utils'
 import { toast } from 'sonner'
 
 type EditorInstance = Parameters<OnMount>[0]
+type MonacoInstance = Parameters<OnMount>[1]
 
 function extToLang(filePath: string): string {
   const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
@@ -26,12 +27,103 @@ function extToLang(filePath: string): string {
 }
 
 const MONACO_THEMES = [
-  { id: 'vs-dark', label: 'Dark' },
-  { id: 'vs', label: 'Light' },
-  { id: 'hc-black', label: 'High Contrast' },
+  { id: 'vs-dark',     label: 'Dark (default)' },
+  { id: 'vs',          label: 'Light' },
+  { id: 'hc-black',    label: 'High Contrast' },
+  { id: 'github-dark', label: 'GitHub Dark' },
+  { id: 'dracula',     label: 'Dracula' },
+  { id: 'one-dark',    label: 'One Dark' },
+  { id: 'monokai',     label: 'Monokai' },
 ] as const
 
 type MonacoThemeId = typeof MONACO_THEMES[number]['id']
+
+function defineCustomThemes(monaco: MonacoInstance): void {
+  monaco.editor.defineTheme('github-dark', {
+    base: 'vs-dark', inherit: true,
+    rules: [
+      { token: 'comment', foreground: '8b949e' },
+      { token: 'string', foreground: 'a5d6ff' },
+      { token: 'keyword', foreground: 'ff7b72' },
+      { token: 'number', foreground: '79c0ff' },
+      { token: 'type', foreground: 'ffa657' },
+      { token: 'function', foreground: 'd2a8ff' },
+    ],
+    colors: {
+      'editor.background': '#0d1117',
+      'editor.foreground': '#c9d1d9',
+      'editor.lineHighlightBackground': '#161b22',
+      'editor.selectionBackground': '#264f7855',
+      'editorLineNumber.foreground': '#30363d',
+      'editorLineNumber.activeForeground': '#8b949e',
+      'editorCursor.foreground': '#c9d1d9',
+      'editorIndentGuide.background': '#21262d',
+    },
+  })
+  monaco.editor.defineTheme('dracula', {
+    base: 'vs-dark', inherit: true,
+    rules: [
+      { token: 'comment', foreground: '6272a4' },
+      { token: 'string', foreground: 'f1fa8c' },
+      { token: 'keyword', foreground: 'ff79c6' },
+      { token: 'number', foreground: 'bd93f9' },
+      { token: 'type', foreground: '8be9fd' },
+      { token: 'function', foreground: '50fa7b' },
+      { token: 'variable', foreground: 'f8f8f2' },
+    ],
+    colors: {
+      'editor.background': '#282a36',
+      'editor.foreground': '#f8f8f2',
+      'editor.lineHighlightBackground': '#44475a55',
+      'editor.selectionBackground': '#44475a',
+      'editorLineNumber.foreground': '#6272a4',
+      'editorCursor.foreground': '#f8f8f2',
+      'editorIndentGuide.background': '#44475a',
+    },
+  })
+  monaco.editor.defineTheme('one-dark', {
+    base: 'vs-dark', inherit: true,
+    rules: [
+      { token: 'comment', foreground: '5c6370' },
+      { token: 'string', foreground: '98c379' },
+      { token: 'keyword', foreground: 'c678dd' },
+      { token: 'number', foreground: 'd19a66' },
+      { token: 'type', foreground: 'e5c07b' },
+      { token: 'function', foreground: '61afef' },
+      { token: 'variable', foreground: 'e06c75' },
+    ],
+    colors: {
+      'editor.background': '#282c34',
+      'editor.foreground': '#abb2bf',
+      'editor.lineHighlightBackground': '#2c313a',
+      'editor.selectionBackground': '#3e4451',
+      'editorLineNumber.foreground': '#495162',
+      'editorCursor.foreground': '#528bff',
+      'editorIndentGuide.background': '#3b4048',
+    },
+  })
+  monaco.editor.defineTheme('monokai', {
+    base: 'vs-dark', inherit: true,
+    rules: [
+      { token: 'comment', foreground: '75715e' },
+      { token: 'string', foreground: 'e6db74' },
+      { token: 'keyword', foreground: 'f92672' },
+      { token: 'number', foreground: 'ae81ff' },
+      { token: 'type', foreground: '66d9ef' },
+      { token: 'function', foreground: 'a6e22e' },
+      { token: 'variable', foreground: 'f8f8f2' },
+    ],
+    colors: {
+      'editor.background': '#272822',
+      'editor.foreground': '#f8f8f2',
+      'editor.lineHighlightBackground': '#3e3d3255',
+      'editor.selectionBackground': '#49483e',
+      'editorLineNumber.foreground': '#75715e',
+      'editorCursor.foreground': '#f8f8f2',
+      'editorIndentGuide.background': '#3b3a32',
+    },
+  })
+}
 
 function CtxSubMenu({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
   const [open, setOpen] = useState(false)
@@ -183,6 +275,7 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
             theme={monacoTheme}
             onMount={(editor, monaco) => {
               editorRef.current = editor
+              defineCustomThemes(monaco)
               editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => void handleSaveRef.current())
               editor.updateOptions({ contextmenu: false })
               editor.getDomNode()?.addEventListener('contextmenu', (e) => {
