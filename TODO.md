@@ -1,12 +1,18 @@
 ### Things to fix
-- [ ] Command Palette needs full overall, i think it should be ctrl + p to do app commands like opening a fresh terminal, opening settings etc
-- [ ] Ctrl + shift + p should open up the file browser for that directory and you can click open up a file
-- [ ] Files need to able to be opened in the layout and also draged and rearranged etc.
-- [ ] You should be able to create new files and folders in the open directory you are in and save files as w.e file type you want
-- [ ] You should be able to drag and drop files and folders from outside of orbit in the file tree sidebar
-- [ ] We need to have different themes for Monaco
-- [ ] Remove open in from the bottom status bar, instead it should be in the Directory name in the sidebar next to the new file and new folder buttons that need to be added.
-- [ ] Right now you can navigate directories via cd'ing in the terminal or pressing breadcrumbs but i think we should have the ability to open a project directly through the windows wenu.
-- [ ] We need to discuss if workspaces are still a good idea and server a purpose or not.
-- [ ] Figure out where to move the right aligned status bar options, do we move the git icon somewhere else, do we move terminal theme and app theme into settings etc.
-- [ ] Notifications shouldnt fire when ever you leave a shell and u left it idle, it should only work for when AI agents are working and not when you open them for the first time, only after you have done an action within them
+
+#### Easy
+- [x] Different themes for Monaco editor
+- [x] Reorganize right-aligned status bar (git icon, terminal theme, app theme → move into settings)
+- [x] Notifications should only fire for AI agents after they've done an action — not when opening an idle shell for the first time
+
+#### Medium
+- [x] Remove "Open In" from the bottom status bar — move to the directory name in the sidebar alongside new file and new folder buttons (which also need to be added)
+- [x] Command Palette needs a full overhaul — Ctrl+P for app commands (open terminal, open settings, etc.)
+- [x] Open a project directly through the Windows menu (right now navigation is only via cd or breadcrumbs)
+
+#### Hard
+- [ ] Ctrl+Shift+P should open a file browser for the current directory — click to open a file in the layout
+- [ ] Files should be openable in the layout and draggable/rearrangeable like terminal panes
+- [ ] Create new files and folders in the open directory, save files as any file type
+- [ ] Drag and drop files and folders from outside Orbit into the file tree sidebar
+- [ ] Decide whether workspaces still serve a purpose or should be redesigned/removed

@@ -141,6 +141,9 @@ export const IPC = {
   // UI State: renderer → main (invoke)
   UI_STATE_GET: 'ui-state:get',
   UI_STATE_SET: 'ui-state:set',
+
+  // Open path: main → renderer (push) — folder path received from CLI args or OS context menu
+  OPEN_PATH: 'open:path',
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
