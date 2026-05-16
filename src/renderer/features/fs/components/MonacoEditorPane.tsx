@@ -127,14 +127,28 @@ function defineCustomThemes(monaco: MonacoInstance): void {
 
 function CtxSubMenu({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
   const [open, setOpen] = useState(false)
+  const [flipLeft, setFlipLeft] = useState(false)
+  const triggerRef = useRef<HTMLDivElement>(null)
+
+  const handleMouseEnter = (): void => {
+    if (triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect()
+      setFlipLeft(rect.right + 152 > window.innerWidth - 8)
+    }
+    setOpen(true)
+  }
+
   return (
-    <div className="relative" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+    <div ref={triggerRef} className="relative" onMouseEnter={handleMouseEnter} onMouseLeave={() => setOpen(false)}>
       <button className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors text-left">
         <span className="flex-1">{label}</span>
         <ChevronRight size={10} className="text-zinc-500 flex-shrink-0" />
       </button>
       {open && (
-        <div className="absolute left-full top-0 -mt-1 ml-0.5 z-[10000] bg-brand-surface border border-brand-panel/60 rounded-md shadow-2xl py-1 min-w-[140px]">
+        <div className={cn(
+          'absolute top-0 -mt-1 z-[10000] bg-brand-surface border border-brand-panel/60 rounded-md shadow-2xl py-1 min-w-[140px]',
+          flipLeft ? 'right-full mr-0.5' : 'left-full ml-0.5'
+        )}>
           {children}
         </div>
       )}
@@ -167,10 +181,10 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
-  const [monacoThemeOverride, setMonacoThemeOverride] = useState<MonacoThemeId | null>(null)
   const [pendingClose, setPendingClose] = useState(false)
   const editorRef = useRef<EditorInstance | null>(null)
   const removeLayoutLeaf = useStore((s) => s.removeLayoutLeaf)
+  const updateSettings = useStore((s) => s.updateSettings)
 
   const handleClose = (): void => {
     if (dirty) { setPendingClose(true); return }
@@ -178,10 +192,12 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
   }
   const theme = useStore((s) => s.settings.theme)
   const editorFontSize = useStore((s) => s.settings.editorFontSize ?? 13)
+  const editorThemeSetting = useStore((s) => s.settings.editorTheme ?? '')
   const editors = useInstalledEditors()
   const ctxRef = useRef<HTMLDivElement>(null)
 
   const autoTheme: MonacoThemeId = theme === 'light' ? 'vs' : 'vs-dark'
+  const monacoThemeOverride: MonacoThemeId | null = (MONACO_THEMES.find((t) => t.id === editorThemeSetting)?.id ?? null)
   const monacoTheme = monacoThemeOverride ?? autoTheme
 
   useEffect(() => {
@@ -336,7 +352,7 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
             {MONACO_THEMES.map((t) => (
               <button
                 key={t.id}
-                onClick={() => { setMonacoThemeOverride(t.id); setCtxMenu(null) }}
+                onClick={() => { void updateSettings({ editorTheme: t.id }); setCtxMenu(null) }}
                 className={cn(
                   'w-full flex items-center px-3 py-1.5 text-xs transition-colors text-left',
                   monacoTheme === t.id ? 'text-zinc-100 bg-brand-panel/60' : 'text-zinc-300 hover:bg-brand-panel hover:text-zinc-100'
@@ -352,7 +368,7 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
               <>
                 <div className="h-px bg-brand-panel my-1" />
                 <button
-                  onClick={() => { setMonacoThemeOverride(null); setCtxMenu(null) }}
+                  onClick={() => { void updateSettings({ editorTheme: '' }); setCtxMenu(null) }}
                   className="w-full flex items-center px-3 py-1.5 text-xs text-zinc-500 hover:bg-brand-panel hover:text-zinc-300 transition-colors text-left"
                 >
                   Reset to auto
