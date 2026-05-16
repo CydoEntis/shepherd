@@ -153,8 +153,11 @@ export function useSessionLifecycle(): void {
       // Session already removed from store means it was intentionally closed — skip toast
       if (!session) return
       const sessionName = session.name
+      const isAgent = !!session.agentCommand
       markSessionExited(sessionId, exitCode)
       removePaneBySessionId(sessionId)
+      // Only show exit toasts for agent sessions — plain shells exit silently
+      if (!isAgent) return
       if (exitCode === 0) {
         toast.success(`${sessionName} finished`)
       } else {
@@ -226,6 +229,22 @@ export function useSessionLifecycle(): void {
       removeNotePaneFromLayout(noteId, panel)
     })
 
+    const offOpenPath = ipc.on(IPC.OPEN_PATH, (payload) => {
+      const { path: folderPath } = payload as { path: string }
+      const { settings } = useStore.getState()
+      createSession({
+        name: folderPath.split(/[\\/]/).pop() ?? 'project',
+        cwd: folderPath,
+        cols: DEFAULT_COLS,
+        rows: DEFAULT_ROWS,
+        projectRoot: folderPath,
+        workspaceId: settings.projectRoot ? undefined : undefined,
+      }).then((meta) => {
+        useStore.getState().upsertSession(meta)
+        useStore.getState().addTab(meta.sessionId)
+      }).catch(() => {})
+    })
+
     return () => {
       offInitial()
       offMeta()
@@ -242,6 +261,7 @@ export function useSessionLifecycle(): void {
       offNotePaneReattached()
       offAddNotePane()
       offRemoveNotePane()
+      offOpenPath()
     }
   }, [])
 
