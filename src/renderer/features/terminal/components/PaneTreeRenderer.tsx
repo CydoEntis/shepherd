@@ -2,13 +2,15 @@ import { useState } from 'react'
 import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from 'react-resizable-panels'
 import { WorkspaceDashboard } from '../../workspace/components/WorkspaceDashboard'
 import { TerminalPane } from './TerminalPane'
+import type { PaneItem } from './TerminalPane'
 import { NotesPane } from '../../layout/components/NotesPane'
 import { MarkdownPreviewPane } from '../../layout/components/MarkdownPreviewPane'
 import { MonacoEditorPane } from '../../fs/components/MonacoEditorPane'
 import { PaneDropTarget } from '../../layout/dnd/PaneDropTarget'
 import { NotePaneCtxMenu } from '../../notes/components/NotePaneCtxMenu'
 import { useStore } from '../../../store/root.store'
-import { detachTab, reattachTab, detachNotePane, reattachNotePane, moveNotePaneToWindow } from '../../window/window.service'
+import { detachTab, reattachTab, detachNotePane, reattachNotePane, moveNotePaneToWindow, moveToWindow } from '../../window/window.service'
+import { findTabForSession } from '../../layout/layout-tree'
 import type { LayoutNode } from '../../layout/layout-tree'
 import type { NotePanelType } from '@shared/ipc-types'
 
@@ -143,7 +145,31 @@ export function PaneTreeRenderer({ node, tabId, onContextMenu, forceMainWindow, 
 
     const sid = node.sessionId
 
-    const paneItems = [
+    const paneItems: PaneItem[] = [
+      {
+        label: 'Edit',
+        action: () => { document.dispatchEvent(new CustomEvent('acc:start-rename-session', { detail: { sessionId: sid } })) },
+      },
+      {
+        type: 'move-to',
+        windowId,
+        isMainWindow,
+        onNewWindow: () => {
+          const { detachPane: dp } = useStore.getState()
+          const actualTabId = findTabForSession(useStore.getState().paneTree, sid) ?? tabId
+          dp(actualTabId, sid)
+          useStore.getState().removeTab(sid)
+          if (windowId) void detachTab(sid, windowId)
+        },
+        onMoveToWindow: (targetWindowId: string) => {
+          const { detachPane: dp, removeTab: rm } = useStore.getState()
+          const actualTabId = findTabForSession(useStore.getState().paneTree, sid) ?? tabId
+          dp(actualTabId, sid)
+          rm(sid)
+          void moveToWindow(sid, targetWindowId)
+        },
+      },
+      { type: 'separator' },
       {
         label: 'Split Horizontal',
         action: () => {
@@ -160,18 +186,7 @@ export function PaneTreeRenderer({ node, tabId, onContextMenu, forceMainWindow, 
           }))
         },
       },
-      isMainWindow
-        ? {
-            label: 'Detach to Window',
-            action: async () => {
-              useStore.getState().detachPane(tabId, sid)
-              if (windowId) await detachTab(sid, windowId)
-            },
-          }
-        : {
-            label: 'Reattach to Main',
-            action: async () => { await reattachTab(sid, windowId ?? undefined) },
-          },
+      { type: 'separator' },
       {
         label: 'Close Pane',
         action: () => {
@@ -189,14 +204,19 @@ export function PaneTreeRenderer({ node, tabId, onContextMenu, forceMainWindow, 
     return (
       <PaneDropTarget leafId={node.id} tabId={tabId}>
         <div
-          className="flex flex-col w-full h-full"
-          style={isFocused ? { boxShadow: `inset 0 0 0 2px ${sessionColor}, inset 0 3px 0 0 ${sessionColor}` } : undefined}
+          className="relative flex flex-col w-full h-full"
           onMouseDownCapture={() => {
             setFocusedSession(sid)
             document.dispatchEvent(new CustomEvent('acc:terminal-pane-focused'))
           }}
         >
           <TerminalPane sessionId={sid} paneItems={paneItems} />
+          {isFocused && (
+            <div
+              className="absolute inset-0 pointer-events-none rounded"
+              style={{ boxShadow: `inset 0 0 0 2px ${sessionColor}, inset 0 3px 0 0 ${sessionColor}` }}
+            />
+          )}
         </div>
       </PaneDropTarget>
     )
@@ -204,21 +224,23 @@ export function PaneTreeRenderer({ node, tabId, onContextMenu, forceMainWindow, 
 
   const handleClass =
     node.direction === 'vertical'
-      ? 'h-1 bg-brand-panel hover:bg-brand-accent transition-colors cursor-row-resize flex-shrink-0'
-      : 'w-1 bg-brand-panel hover:bg-brand-accent transition-colors cursor-col-resize flex-shrink-0'
+      ? 'h-1.5 bg-brand-bg hover:bg-brand-accent transition-colors cursor-row-resize flex-shrink-0'
+      : 'w-1.5 bg-brand-bg hover:bg-brand-accent transition-colors cursor-col-resize flex-shrink-0'
 
   return (
-    <PanelGroup orientation={node.direction} className="w-full h-full">
+    <PanelGroup orientation={node.direction} className="w-full h-full p-1 gap-0">
       {node.children.map((child, idx) => [
         idx > 0 && <PanelResizeHandle key={`handle-${node.id}-${idx}`} className={handleClass} />,
         <Panel key={child.id} defaultSize={Math.floor(100 / node.children.length)} minSize={10}>
-          <PaneTreeRenderer
-            node={child}
-            tabId={tabId}
-            onContextMenu={onContextMenu}
-            forceMainWindow={forceMainWindow}
-            onCloseLastPane={onCloseLastPane}
-          />
+          <div className={node.direction === 'vertical' ? 'w-full h-full py-0.5' : 'w-full h-full px-0.5'}>
+            <PaneTreeRenderer
+              node={child}
+              tabId={tabId}
+              onContextMenu={onContextMenu}
+              forceMainWindow={forceMainWindow}
+              onCloseLastPane={onCloseLastPane}
+            />
+          </div>
         </Panel>,
       ])}
     </PanelGroup>
