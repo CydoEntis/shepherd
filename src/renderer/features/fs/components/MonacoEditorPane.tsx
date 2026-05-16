@@ -21,6 +21,7 @@ import PastelsOnDarkTheme from '../../../assets/monaco-themes/pastels-on-dark.js
 import UpstreamSunburstTheme from '../../../assets/monaco-themes/upstream-sunburst.json'
 import TwilightTheme from '../../../assets/monaco-themes/twilight.json'
 import VibrantInkTheme from '../../../assets/monaco-themes/vibrant-ink.json'
+import BirdsOfParadiseTheme from '../../../assets/monaco-themes/birds-of-paradise.json'
 
 type EditorInstance = Parameters<OnMount>[0]
 type MonacoInstance = Parameters<OnMount>[1]
@@ -60,6 +61,7 @@ const MONACO_THEMES = [
   { id: 'pastels-on-dark',    label: 'Pastels on Dark' },
   { id: 'dawn',               label: 'Dawn' },
   { id: 'amy',                label: 'Amy' },
+  { id: 'birds-of-paradise',  label: 'Birds of Paradise' },
 ] as const
 
 type MonacoThemeId = typeof MONACO_THEMES[number]['id']
@@ -170,6 +172,7 @@ function defineCustomThemes(monaco: MonacoInstance): void {
   monaco.editor.defineTheme('upstream-sunburst', UpstreamSunburstTheme as ThemeData)
   monaco.editor.defineTheme('twilight',          TwilightTheme as ThemeData)
   monaco.editor.defineTheme('vibrant-ink',       VibrantInkTheme as ThemeData)
+  monaco.editor.defineTheme('birds-of-paradise', BirdsOfParadiseTheme as ThemeData)
 }
 
 function CtxSubMenu({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
@@ -246,12 +249,13 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
   const autoTheme: MonacoThemeId = ((): MonacoThemeId => {
     switch (theme) {
       case 'light':  return 'vs'
+      case 'dark':   return 'github-dark'
       case 'space':  return 'dracula'
-      case 'nebula': return 'one-dark'
+      case 'nebula': return 'amy'
       case 'solar':  return 'monokai'
       case 'aurora': return 'github-dark'
-      case 'mars':   return 'monokai'
-      case 'pulsar': return 'one-dark'
+      case 'mars':   return 'birds-of-paradise'
+      case 'pulsar': return 'blackboard'
       default:       return 'vs-dark'
     }
   })()
