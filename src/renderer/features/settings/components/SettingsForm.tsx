@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect, useMemo } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { FolderOpen } from 'lucide-react'
+import { FolderOpen, Moon, Sun, Monitor, Sparkles, Star, Flame, Waves, Globe, Zap, GitBranch } from 'lucide-react'
 import { toast } from 'sonner'
 import { AppSettingsSchema, DEFAULT_SETTINGS } from '@shared/ipc-types'
 import type { AppSettings } from '@shared/ipc-types'
@@ -16,7 +16,20 @@ import {
   SelectTrigger, SelectValue
 } from '../../../components/ui/select'
 import { useStore } from '../../../store/root.store'
+import { TERMINAL_THEME_LIST } from '../../terminal/hooks/useTerminal'
 import { cn } from '../../../lib/utils'
+
+const THEMES = [
+  { id: 'dark'   as const, label: 'Dark',   icon: Moon      },
+  { id: 'light'  as const, label: 'Light',  icon: Sun       },
+  { id: 'system' as const, label: 'System', icon: Monitor   },
+  { id: 'space'  as const, label: 'Space',  icon: Sparkles  },
+  { id: 'nebula' as const, label: 'Nebula', icon: Star      },
+  { id: 'solar'  as const, label: 'Solar',  icon: Flame     },
+  { id: 'aurora' as const, label: 'Aurora', icon: Waves     },
+  { id: 'mars'   as const, label: 'Mars',   icon: Globe     },
+  { id: 'pulsar' as const, label: 'Pulsar', icon: Zap       },
+]
 
 const HOTKEY_FIELDS: { key: keyof AppSettings['hotkeys']; label: string }[] = [
   { key: 'newSession',     label: 'New Session' },
@@ -131,6 +144,10 @@ interface Props {
 export function SettingsForm({ onClose }: Props): JSX.Element {
   const settings = useStore((s) => s.settings)
   const updateSettings = useStore((s) => s.updateSettings)
+  const terminalThemes = useStore((s) => s.terminalThemes)
+  const setTerminalTheme = useStore((s) => s.setTerminalTheme)
+  const activeSessionId = useStore((s) => s.focusedSessionId ?? s.activeSessionId)
+  const activeTerminalTheme = activeSessionId ? (terminalThemes[activeSessionId] ?? '') : ''
 
   const { register, handleSubmit, setValue, watch } = useForm<AppSettings>({
     resolver: zodResolver(AppSettingsSchema),
@@ -189,6 +206,69 @@ export function SettingsForm({ onClose }: Props): JSX.Element {
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto pl-10 pr-16 py-8 flex flex-col gap-6">
+
+        <section className="flex flex-col gap-4">
+          <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">Appearance</p>
+
+          <div className="flex flex-col gap-1.5">
+            <Label>App Theme</Label>
+            <div className="grid grid-cols-3 gap-1.5">
+              {THEMES.map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => void updateSettings({ theme: id })}
+                  className={cn(
+                    'flex items-center gap-2 px-3 py-2 rounded-md border text-xs transition-colors text-left',
+                    settings.theme === id
+                      ? 'border-brand-accent/60 bg-brand-accent/10 text-zinc-100'
+                      : 'border-brand-panel text-zinc-400 hover:border-zinc-600 hover:text-zinc-200'
+                  )}
+                >
+                  <Icon size={12} className="flex-shrink-0" />
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label>Terminal Theme {activeSessionId ? '' : <span className="text-zinc-600 font-normal">(no active session)</span>}</Label>
+            <Select
+              value={activeTerminalTheme || '__auto__'}
+              onValueChange={(v) => { if (activeSessionId) setTerminalTheme(activeSessionId, v === '__auto__' ? '' : v) }}
+              disabled={!activeSessionId}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Auto (app theme)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__auto__">Auto (app theme)</SelectItem>
+                <SelectSeparator />
+                {TERMINAL_THEME_LIST.map(({ id, label }) => (
+                  <SelectItem key={id} value={id}>{label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-0.5">
+              <Label className="text-sm text-foreground font-normal">Review Git Changes</Label>
+              <span className="text-xs text-zinc-500">Open the git diff panel for the current project</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => document.dispatchEvent(new CustomEvent('acc:toggle-git-review'))}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-brand-panel text-xs text-zinc-400 hover:border-zinc-600 hover:text-zinc-200 transition-colors flex-shrink-0"
+            >
+              <GitBranch size={12} />
+              Review
+            </button>
+          </div>
+        </section>
+
+        <div className="h-px bg-border" />
 
         <section className="flex flex-col gap-4">
           <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">Terminal</p>

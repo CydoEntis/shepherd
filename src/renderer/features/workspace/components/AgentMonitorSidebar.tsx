@@ -1,11 +1,12 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
-import { Plus, ChevronDown, ChevronRight, FolderOpen, FolderTree, X, Users, Terminal, Search } from 'lucide-react'
+import { Plus, ChevronDown, ChevronRight, FolderOpen, FolderTree, X, Users, Terminal, Search, FilePlus2, FolderPlus, ExternalLink } from 'lucide-react'
 import { useStore } from '../../../store/root.store'
 import { patchSession, killSession, createSession } from '../../session/session.service'
 import { DEFAULT_COLS, DEFAULT_ROWS } from '@shared/constants'
 import { EditSessionModal } from '../../session/components/EditSessionModal'
 import { EditGroupModal } from '../../session/components/EditGroupModal'
-import { removeWorktree, copyFile } from '../../fs/fs.service'
+import { removeWorktree, copyFile, openInEditor } from '../../fs/fs.service'
+import { useInstalledEditors } from '../../fs/hooks/useInstalledEditors'
 import { createWorkspace, deleteWorkspace } from '../workspace.service'
 import { detachTab, reattachTab, moveToWindow } from '../../window/window.service'
 import { NewWorkspaceModal } from './NewWorkspaceModal'
@@ -75,7 +76,9 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
   const [draggedSessionId, setDraggedSessionId] = useState<string | null>(null)
   const [dragOverGroupId, setDragOverGroupId] = useState<string | null | 'ungrouped'>('ungrouped')
   const [isDragOver, setIsDragOver] = useState(false)
+  const [openInOpen, setOpenInOpen] = useState(false)
   const sidebarBodyRef = useRef<HTMLDivElement>(null)
+  const installedEditors = useInstalledEditors()
 
   const isRootWorkspace = activeWorkspaceId === ROOT_WORKSPACE_ID
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) ?? null
@@ -595,14 +598,59 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
       <div className="flex flex-col flex-1 min-h-0" ref={sidebarBodyRef}>
         <div className="flex flex-col flex-1 min-h-0">
           {/* Folder header */}
-          <div className="flex items-center gap-2 px-3 py-1.5 border-b border-brand-panel/40 flex-shrink-0">
+          <div className="flex items-center gap-1 px-3 py-1.5 border-b border-brand-panel/40 flex-shrink-0">
             <span className="text-xs text-zinc-400 truncate flex-1 min-w-0 font-medium">
               {fileTreeRoot ? fileTreeRoot.split('/').filter(Boolean).pop() ?? fileTreeRoot : 'No folder open'}
             </span>
+            {fileTreeRoot && (
+              <>
+                <button
+                  onClick={() => document.dispatchEvent(new CustomEvent('acc:new-file-at-root', { detail: { parentDir: fileTreeRoot, type: 'file' } }))}
+                  title="New File"
+                  className="text-zinc-600 hover:text-zinc-300 transition-colors flex-shrink-0 p-0.5"
+                >
+                  <FilePlus2 size={12} />
+                </button>
+                <button
+                  onClick={() => document.dispatchEvent(new CustomEvent('acc:new-file-at-root', { detail: { parentDir: fileTreeRoot, type: 'folder' } }))}
+                  title="New Folder"
+                  className="text-zinc-600 hover:text-zinc-300 transition-colors flex-shrink-0 p-0.5"
+                >
+                  <FolderPlus size={12} />
+                </button>
+                {installedEditors.length > 0 && (
+                  <div className="relative flex-shrink-0">
+                    <button
+                      onClick={() => setOpenInOpen((v) => !v)}
+                      title="Open In"
+                      className="text-zinc-600 hover:text-zinc-300 transition-colors p-0.5"
+                    >
+                      <ExternalLink size={12} />
+                    </button>
+                    {openInOpen && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setOpenInOpen(false)} />
+                        <div className="absolute right-0 top-full mt-1 z-50 bg-brand-surface border border-brand-panel/60 rounded-md shadow-xl py-1 min-w-[140px]">
+                          {installedEditors.map((ed) => (
+                            <button
+                              key={ed.command}
+                              onClick={() => { openInEditor(ed.command, fileTreeRoot).catch(() => {}); setOpenInOpen(false) }}
+                              className="w-full flex items-center px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors text-left"
+                            >
+                              {ed.name}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
             <button
               onClick={() => document.dispatchEvent(new CustomEvent('acc:open-project'))}
               title="Open Folder"
-              className="text-zinc-600 hover:text-zinc-300 transition-colors flex-shrink-0"
+              className="text-zinc-600 hover:text-zinc-300 transition-colors flex-shrink-0 p-0.5"
             >
               <FolderOpen size={12} />
             </button>

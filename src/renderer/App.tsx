@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { Toaster, toast } from 'sonner'
-import { Settings, Moon, Sun, Monitor, Sparkles, GitBranch, Palette, Star, Flame, Waves, HelpCircle, Globe, Zap, ExternalLink, FolderOpen, ChevronDown, Plus, X } from 'lucide-react'
+import { Settings, HelpCircle } from 'lucide-react'
 import { marked } from 'marked'
 import { createPortal } from 'react-dom'
 import { useTheme } from './hooks/useTheme'
@@ -28,19 +28,14 @@ import { useGitReview } from './features/workspace/hooks/useGitReview'
 import { useStore } from './store/root.store'
 import { findNotesLeafId } from './features/layout/layout-tree'
 import { LayoutDndProvider } from './features/layout/dnd/LayoutDndContext'
-import { TERMINAL_THEME_LIST } from './features/terminal/hooks/useTerminal'
 import { setWindowMeta } from './features/window/window.service'
-import { useInstalledEditors } from './features/fs/hooks/useInstalledEditors'
-import { openInEditor } from './features/fs/fs.service'
-import { createWorkspace, deleteWorkspace, getUiState, setUiState } from './features/workspace/workspace.service'
+import { getUiState, setUiState } from './features/workspace/workspace.service'
 import { ErrorBoundary } from './components/ErrorBoundary'
-import { NewWorkspaceModal } from './features/workspace/components/NewWorkspaceModal'
 import { NotificationBell } from './features/notifications/components/NotificationBell'
-import { openNoteInEditor } from './features/notes/notes.service'
 import { ipc } from './lib/ipc'
 import { IPC } from '@shared/ipc-channels'
 import { ROOT_WORKSPACE_ID } from '@shared/ipc-types'
-import { cn, normalizePath, shortPath } from './lib/utils'
+import { cn, normalizePath } from './lib/utils'
 
 declare const __APP_VERSION__: string
 
@@ -51,17 +46,6 @@ interface ContextMenuTarget {
   tabId: string
 }
 
-const THEMES = [
-  { id: 'dark'   as const, label: 'Dark',   icon: Moon      },
-  { id: 'light'  as const, label: 'Light',  icon: Sun       },
-  { id: 'system' as const, label: 'System', icon: Monitor   },
-  { id: 'space'  as const, label: 'Space',  icon: Sparkles  },
-  { id: 'nebula' as const, label: 'Nebula', icon: Star      },
-  { id: 'solar'  as const, label: 'Solar',  icon: Flame     },
-  { id: 'aurora' as const, label: 'Aurora', icon: Waves     },
-  { id: 'mars'   as const, label: 'Mars',   icon: Globe     },
-  { id: 'pulsar' as const, label: 'Pulsar', icon: Zap       },
-]
 
 const WINDOW_COLORS = ['#6366f1', '#22c55e', '#f59e0b', '#ec4899', '#14b8a6', '#f97316', '#8b5cf6', '#ef4444', '#06b6d4']
 
@@ -149,113 +133,6 @@ function StatusWindowBadge(): JSX.Element | null {
   )
 }
 
-function StatusThemeToggle(): JSX.Element {
-  const theme = useStore((s) => s.settings.theme)
-  const updateSettings = useStore((s) => s.updateSettings)
-  const [open, setOpen] = useState(false)
-  const btnRef = useRef<HTMLButtonElement>(null)
-  const [menuPos, setMenuPos] = useState<{ right: number; bottom: number }>({ right: 0, bottom: 32 })
-  const CurrentIcon = THEMES.find((t) => t.id === theme)?.icon ?? Moon
-
-  const handleOpen = (): void => {
-    const rect = btnRef.current?.getBoundingClientRect()
-    if (rect) setMenuPos({ right: window.innerWidth - rect.right, bottom: window.innerHeight - rect.top + 4 })
-    setOpen(true)
-  }
-
-  return (
-    <>
-      <button
-        ref={btnRef}
-        onClick={open ? () => setOpen(false) : handleOpen}
-        title="Theme"
-        className={cn('flex items-center gap-1.5 px-2.5 h-7 rounded transition-colors', open ? 'text-brand-muted bg-brand-panel' : 'text-zinc-500 hover:text-zinc-300')}
-      >
-        <CurrentIcon size={15} />
-        <span className="text-[11px] font-medium">Theme</span>
-      </button>
-      {open && createPortal(
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div
-            className="fixed z-50 bg-brand-surface border border-brand-panel/60 rounded-md shadow-2xl py-1 w-36"
-            style={{ right: menuPos.right, bottom: menuPos.bottom }}
-          >
-            {THEMES.map(({ id, label, icon: Icon }) => (
-              <button
-                key={id}
-                onClick={() => { updateSettings({ theme: id }); setOpen(false) }}
-                className={cn(
-                  'w-full flex items-center gap-2.5 px-3 py-1.5 text-xs transition-colors text-left',
-                  theme === id ? 'text-zinc-200 bg-brand-panel/40' : 'text-zinc-400 hover:bg-brand-panel hover:text-zinc-200'
-                )}
-              >
-                <Icon size={12} className="flex-shrink-0" />
-                {label}
-              </button>
-            ))}
-          </div>
-        </>,
-        document.body
-      )}
-    </>
-  )
-}
-
-function StatusTerminalThemeToggle({ sessionId }: { sessionId: string }): JSX.Element {
-  const activeTheme = useStore((s) => s.terminalThemes[sessionId])
-  const setTerminalTheme = useStore((s) => s.setTerminalTheme)
-  const [open, setOpen] = useState(false)
-  const btnRef = useRef<HTMLButtonElement>(null)
-  const [menuPos, setMenuPos] = useState<{ right: number; bottom: number }>({ right: 0, bottom: 32 })
-
-  const handleOpen = (): void => {
-    const rect = btnRef.current?.getBoundingClientRect()
-    if (rect) setMenuPos({ right: window.innerWidth - rect.right, bottom: window.innerHeight - rect.top + 4 })
-    setOpen(true)
-  }
-
-  return (
-    <>
-      <button
-        ref={btnRef}
-        onClick={open ? () => setOpen(false) : handleOpen}
-        title="Terminal theme"
-        className={cn('flex items-center gap-1.5 px-2.5 h-7 rounded transition-colors', open ? 'text-brand-muted bg-brand-panel' : 'text-zinc-500 hover:text-zinc-300')}
-      >
-        <Palette size={15} />
-        <span className="text-[11px] font-medium">Terminal</span>
-      </button>
-      {open && createPortal(
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div
-            className="fixed z-50 bg-brand-surface border border-brand-panel/60 rounded-md shadow-2xl py-1 w-44"
-            style={{ right: menuPos.right, bottom: menuPos.bottom }}
-          >
-            <button
-              onClick={() => { setTerminalTheme(sessionId, ''); setOpen(false) }}
-              className={cn('w-full text-left px-3 py-1.5 text-xs transition-colors', !activeTheme ? 'text-zinc-200 bg-brand-panel/40' : 'text-zinc-400 hover:bg-brand-panel hover:text-zinc-200')}
-            >
-              Auto (app theme)
-            </button>
-            <div className="my-1 border-t border-brand-panel/40" />
-            {TERMINAL_THEME_LIST.map(({ id, label }) => (
-              <button
-                key={id}
-                onClick={() => { setTerminalTheme(sessionId, id); setOpen(false) }}
-                className={cn('w-full text-left px-3 py-1.5 text-xs transition-colors', activeTheme === id ? 'text-zinc-200 bg-brand-panel/40' : 'text-zinc-400 hover:bg-brand-panel hover:text-zinc-200')}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </>,
-        document.body
-      )}
-    </>
-  )
-}
 
 export function App(): JSX.Element {
   useSessionLifecycle()
@@ -285,8 +162,6 @@ export function App(): JSX.Element {
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [releaseNotesOpen, setReleaseNotesOpen] = useState(false)
   const [sidePanel, setSidePanel] = useState<'settings' | 'git' | null>(null)
-  const [openInMenuOpen, setOpenInMenuOpen] = useState(false)
-  const [activeNoteId, setActiveNoteId] = useState<string | null>(null)
   const [workspaceSessionId, setWorkspaceSessionId] = useState<string | null>('__root__')
   const restoredWorkspaceRef = useRef(false)
 
@@ -302,7 +177,6 @@ export function App(): JSX.Element {
   const resetRootPane = useStore((s) => s.resetRootPane)
   const workspaceProject = workspaces.find((w) => w.id === activeWorkspaceId)?.rootPath || null
   const { sidebarWidth, handleSidebarDragStart } = useSidebarResize(224)
-  const installedEditors = useInstalledEditors()
 
   const selectedSession = useStore((s) => workspaceSessionId ? s.sessions[workspaceSessionId] : null)
   // Active session cwd — updated live via OSC 7 shell integration
@@ -312,10 +186,6 @@ export function App(): JSX.Element {
   })
   const gitRoot = selectedSession?.worktreePath ?? workspaceProject
   const gitReview = useGitReview(gitRoot, selectedSession?.worktreeBaseBranch)
-  const totalChanges =
-    (gitReview.data?.staged.length ?? 0) +
-    (gitReview.data?.unstaged.length ?? 0) +
-    (gitReview.data?.untracked.length ?? 0)
 
   useEffect(() => {
     if (settingsLoaded && dismissedReleaseVersion !== __APP_VERSION__) {
@@ -348,12 +218,11 @@ export function App(): JSX.Element {
   useEffect(() => { setSidePanel(null) }, [workspaceProject])
 
   useEffect(() => {
-    const handler = (e: Event): void => {
-      setActiveNoteId((e as CustomEvent<{ noteId: string }>).detail.noteId)
-    }
-    document.addEventListener('acc:note-active-changed', handler)
-    return () => document.removeEventListener('acc:note-active-changed', handler)
+    const handler = (): void => setSidePanel((p) => p === 'settings' ? null : 'settings')
+    document.addEventListener('acc:open-settings', handler)
+    return () => document.removeEventListener('acc:open-settings', handler)
   }, [])
+
 
   useEffect(() => {
     return ipc.on(IPC.NOTES_EXTERNAL_UPDATE, (payload) => {
@@ -546,88 +415,10 @@ export function App(): JSX.Element {
           >
             <HelpCircle size={13} />
           </button>
-          {installedEditors.length > 0 && (workspaceProject !== null || activeNoteId !== null) && (
-            <div className="relative ml-1">
-              <button
-                onClick={() => setOpenInMenuOpen(v => !v)}
-                className="flex items-center gap-1.5 px-2 h-6 rounded text-zinc-500 hover:text-zinc-300 hover:bg-brand-panel transition-colors"
-              >
-                <ExternalLink size={12} />
-                <span className="text-[11px] font-medium">Open In</span>
-              </button>
-              {openInMenuOpen && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setOpenInMenuOpen(false)} />
-                  <div className="absolute left-0 bottom-full mb-1 z-50 bg-brand-bg border border-brand-panel/60 rounded shadow-xl py-1 min-w-[160px]">
-                    {workspaceProject !== null && (
-                      <>
-                        <div className="px-3 py-1 text-[10px] text-zinc-600 uppercase tracking-wider font-medium select-none">Project</div>
-                        {installedEditors.map(ed => (
-                          <button
-                            key={`proj-${ed.command}`}
-                            onClick={() => { openInEditor(ed.command, workspaceProject); setOpenInMenuOpen(false) }}
-                            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-zinc-400 hover:bg-brand-panel hover:text-zinc-200 transition-colors text-left"
-                          >
-                            {ed.name}
-                          </button>
-                        ))}
-                      </>
-                    )}
-                    {workspaceProject !== null && activeNoteId !== null && (
-                      <div className="my-1 border-t border-brand-panel/40" />
-                    )}
-                    {activeNoteId !== null && (
-                      <>
-                        <div className="px-3 py-1 text-[10px] text-zinc-600 uppercase tracking-wider font-medium select-none">Note</div>
-                        {installedEditors.map(ed => (
-                          <button
-                            key={`note-${ed.command}`}
-                            onClick={() => {
-                              openNoteInEditor(ed.command, activeNoteId)
-                              setOpenInMenuOpen(false)
-                            }}
-                            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-zinc-400 hover:bg-brand-panel hover:text-zinc-200 transition-colors text-left"
-                          >
-                            {ed.name}
-                          </button>
-                        ))}
-                      </>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
         </div>
         <StatusWindowBadge />
         <div className="flex-1 flex items-center gap-0.5 justify-end">
-          {workspaceProject !== null && (
-            <button
-              onClick={() => { if (gitRoot) setSidePanel(p => p === 'git' ? null : 'git') }}
-              title="Review Changes (Ctrl+Shift+G)"
-              className={cn(
-                'relative flex items-center gap-1.5 px-2.5 h-7 rounded transition-colors',
-                sidePanel === 'git'
-                  ? 'text-brand-muted bg-brand-panel'
-                  : totalChanges > 0
-                    ? 'text-zinc-300 hover:text-zinc-100'
-                    : 'text-zinc-500 hover:text-zinc-300'
-              )}
-            >
-              <GitBranch size={15} />
-              <span className="text-[11px] font-medium">Git</span>
-              {totalChanges > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 flex items-center justify-center min-w-[17px] h-[17px] px-1 rounded-full bg-brand-accent text-[9px] font-bold text-brand-bg leading-none border-2 border-brand-surface">
-                  {totalChanges > 99 ? '99+' : totalChanges}
-                </span>
-              )}
-            </button>
-          )}
-          {workspaceSessionId !== null && (
-            <StatusTerminalThemeToggle sessionId={workspaceSessionId} />
-          )}
           <NotificationBell />
-          <StatusThemeToggle />
           <button
             onClick={() => setSidePanel(p => p === 'settings' ? null : 'settings')}
             title="Settings"
