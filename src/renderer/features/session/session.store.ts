@@ -138,7 +138,14 @@ export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', neve
         if (tabId === '__root__') { state.paneTree[tabId] = makeHomeLeaf() } else {
           state.tabOrder = state.tabOrder.filter((id) => id !== tabId)
           delete state.paneTree[tabId]
-          if (state.activeSessionId === tabId) state.activeSessionId = state.tabOrder[0] ?? null
+          if (state.activeSessionId === tabId) {
+            const idx = state.tabOrder.indexOf(tabId)
+            const realTabs = state.tabOrder.filter((id) => id !== '__root__' && id !== tabId)
+            const toLeft = realTabs.filter((id) => state.tabOrder.indexOf(id) < idx)
+            state.activeSessionId = toLeft.length > 0 ? toLeft[toLeft.length - 1] : (realTabs[0] ?? '__root__')
+          }
+          state.tabOrder = state.tabOrder.filter((id) => id !== tabId)
+          delete state.paneTree[tabId]
         }
       } else {
         state.paneTree[tabId] = newTree
@@ -152,9 +159,14 @@ export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', neve
       const newTree = removeTerminalLeaf(tree, sessionId)
       if (!newTree) {
         if (tabId === '__root__') { state.paneTree[tabId] = makeHomeLeaf() } else {
+          if (state.activeSessionId === tabId) {
+            const idx = state.tabOrder.indexOf(tabId)
+            const realTabs = state.tabOrder.filter((id) => id !== '__root__' && id !== tabId)
+            const toLeft = realTabs.filter((id) => state.tabOrder.indexOf(id) < idx)
+            state.activeSessionId = toLeft.length > 0 ? toLeft[toLeft.length - 1] : (realTabs[0] ?? '__root__')
+          }
           state.tabOrder = state.tabOrder.filter((id) => id !== tabId)
           delete state.paneTree[tabId]
-          if (state.activeSessionId === tabId) state.activeSessionId = state.tabOrder[0] ?? null
         }
       } else {
         // If the remaining tree is a single terminal leaf belonging to another session's

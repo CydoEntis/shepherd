@@ -258,10 +258,10 @@ export function useSessionLifecycle(): void {
         }).then((meta) => {
           useStore.getState().upsertSession(meta)
           useStore.getState().addTab(meta.sessionId)
-          // Kill the home terminal after the new one is registered
-          if (homeSessionId) {
+          // Replace the home terminal — closePane removes its tab from tabOrder entirely
+          if (homeTabId && homeSessionId) {
             killSession(homeSessionId).catch(() => {})
-            useStore.getState().removePaneBySessionId(homeSessionId)
+            useStore.getState().closePane(homeTabId, homeSessionId)
           }
         }).catch(() => {})
       }).catch(() => {})
