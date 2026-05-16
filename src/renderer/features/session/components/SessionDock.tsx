@@ -137,8 +137,10 @@ export function SessionDock({ activeSessionId, onSelectSession }: Props): JSX.El
     try { await killSession(tabId) } catch {}
     removeTab(tabId)
     if (activeSessionId === tabId) {
-      const remaining = sessionTabs.filter((id) => id !== tabId)
-      onSelectSession(remaining[0] ?? '__root__')
+      const idx = sessionTabs.indexOf(tabId)
+      const toLeft = sessionTabs.slice(0, idx)
+      const next = toLeft.length > 0 ? toLeft[toLeft.length - 1] : sessionTabs[idx + 1]
+      onSelectSession(next ?? '__root__')
     }
   }
 
@@ -188,8 +190,10 @@ export function SessionDock({ activeSessionId, onSelectSession }: Props): JSX.El
     try { await killSession(tabId) } catch {}
     removeTab(tabId)
     if (activeSessionId === tabId) {
-      const remaining = sessionTabs.filter((id) => id !== tabId)
-      onSelectSession(remaining[0] ?? '__root__')
+      const idx = sessionTabs.indexOf(tabId)
+      const toLeft = sessionTabs.slice(0, idx)
+      const next = toLeft.length > 0 ? toLeft[toLeft.length - 1] : sessionTabs[idx + 1]
+      onSelectSession(next ?? '__root__')
     }
   }
 

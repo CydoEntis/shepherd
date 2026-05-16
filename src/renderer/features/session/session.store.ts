@@ -106,16 +106,17 @@ export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', neve
   removeTab: (tabId) =>
     set((state) => {
       if (tabId === '__root__') return
-      const idx = state.tabOrder.indexOf(tabId)
+      if (state.activeSessionId === tabId) {
+        const idx = state.tabOrder.indexOf(tabId)
+        const realTabs = state.tabOrder.filter((id) => id !== '__root__' && id !== tabId)
+        const toLeft = realTabs.filter((id) => state.tabOrder.indexOf(id) < idx)
+        state.activeSessionId = toLeft.length > 0 ? toLeft[toLeft.length - 1] : (realTabs[0] ?? '__root__')
+      }
       state.tabOrder = state.tabOrder.filter((id) => id !== tabId)
       const tree = state.paneTree[tabId]
       if (tree) {
         collectSessionIds(tree).forEach((sid) => delete state.sessions[sid])
         delete state.paneTree[tabId]
-      }
-      if (state.activeSessionId === tabId) {
-        state.activeSessionId =
-          state.tabOrder[Math.max(0, idx - 1)] ?? state.tabOrder[0] ?? null
       }
     }),
 
