@@ -149,6 +149,7 @@ export function App(): JSX.Element {
   const windowHighlighted = useStore((s) => s.windowHighlighted)
   const windowColor = useStore((s) => s.windowColor)
 
+  const uiFontSize = useStore((s) => s.settings.uiFontSize ?? 14)
   const settingsLoaded = useStore((s) => s.settingsLoaded)
   const dismissedReleaseVersion = useStore((s) => s.settings.dismissedReleaseVersion)
   const updateSettings = useStore((s) => s.updateSettings)
@@ -254,6 +255,10 @@ export function App(): JSX.Element {
     resetRootPane()
     void setUiState({ activeWorkspaceId: id })
   }, [setActiveWorkspaceId, resetRootPane])
+
+  useEffect(() => {
+    document.documentElement.style.fontSize = `${uiFontSize}px`
+  }, [uiFontSize])
 
   useTheme(appTheme)
 

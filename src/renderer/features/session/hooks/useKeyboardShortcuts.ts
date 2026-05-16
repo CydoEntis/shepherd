@@ -26,9 +26,11 @@ function match(e: KeyboardEvent, binding: string): boolean {
 
 export function useKeyboardShortcuts({ onTogglePalette, onShowShortcuts, onNewNoteDrawer, onOpenFileFinder }: Callbacks): void {
   const removeTab = useStore((s) => s.removeTab)
+  const updateSettings = useStore((s) => s.updateSettings)
   const settings = useStore((s) => s.settings)
   const activeSessionId = useStore((s) => s.activeSessionId)
 
+  const updateSettingsRef = useRef(updateSettings)
   const settingsRef = useRef(settings)
   const activeSessionIdRef = useRef(activeSessionId)
   const onTogglePaletteRef = useRef(onTogglePalette)
@@ -36,6 +38,7 @@ export function useKeyboardShortcuts({ onTogglePalette, onShowShortcuts, onNewNo
   const onNewNoteDrawerRef = useRef(onNewNoteDrawer)
   const onOpenFileFinderRef = useRef(onOpenFileFinder)
 
+  useEffect(() => { updateSettingsRef.current = updateSettings }, [updateSettings])
   useEffect(() => { settingsRef.current = settings }, [settings])
   useEffect(() => { activeSessionIdRef.current = activeSessionId }, [activeSessionId])
   useEffect(() => { onTogglePaletteRef.current = onTogglePalette }, [onTogglePalette])
@@ -55,7 +58,15 @@ export function useKeyboardShortcuts({ onTogglePalette, onShowShortcuts, onNewNo
     const handleKeyDown = (e: KeyboardEvent): void => {
       const hk = settingsRef.current.hotkeys
 
-      if (match(e, hk.quickNote)) {
+      if (e.ctrlKey && (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '0')) {
+        e.preventDefault(); e.stopPropagation()
+        const current = settingsRef.current.uiFontSize ?? 14
+        let next = current
+        if (e.key === '+' || e.key === '=') next = Math.min(24, current + 1)
+        else if (e.key === '-') next = Math.max(10, current - 1)
+        else if (e.key === '0') next = 14
+        void updateSettingsRef.current({ uiFontSize: next })
+      } else if (match(e, hk.quickNote)) {
         e.preventDefault(); e.stopPropagation()
         onNewNoteDrawerRef.current()
       } else if (match(e, hk.newSession)) {

@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect, useMemo } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { FolderOpen, Moon, Sun, Monitor, Sparkles, Star, Flame, Waves, Globe, Zap, GitBranch } from 'lucide-react'
+import { FolderOpen, GitBranch } from 'lucide-react'
 import { toast } from 'sonner'
 import { AppSettingsSchema, DEFAULT_SETTINGS } from '@shared/ipc-types'
 import type { AppSettings } from '@shared/ipc-types'
@@ -20,15 +20,15 @@ import { TERMINAL_THEME_LIST } from '../../terminal/hooks/useTerminal'
 import { cn } from '../../../lib/utils'
 
 const THEMES = [
-  { id: 'dark'   as const, label: 'Dark',   icon: Moon      },
-  { id: 'light'  as const, label: 'Light',  icon: Sun       },
-  { id: 'system' as const, label: 'System', icon: Monitor   },
-  { id: 'space'  as const, label: 'Space',  icon: Sparkles  },
-  { id: 'nebula' as const, label: 'Nebula', icon: Star      },
-  { id: 'solar'  as const, label: 'Solar',  icon: Flame     },
-  { id: 'aurora' as const, label: 'Aurora', icon: Waves     },
-  { id: 'mars'   as const, label: 'Mars',   icon: Globe     },
-  { id: 'pulsar' as const, label: 'Pulsar', icon: Zap       },
+  { id: 'dark'   as const, label: 'Dark'   },
+  { id: 'light'  as const, label: 'Light'  },
+  { id: 'system' as const, label: 'System' },
+  { id: 'space'  as const, label: 'Space'  },
+  { id: 'nebula' as const, label: 'Nebula' },
+  { id: 'solar'  as const, label: 'Solar'  },
+  { id: 'aurora' as const, label: 'Aurora' },
+  { id: 'mars'   as const, label: 'Mars'   },
+  { id: 'pulsar' as const, label: 'Pulsar' },
 ]
 
 const HOTKEY_FIELDS: { key: keyof AppSettings['hotkeys']; label: string }[] = [
@@ -210,46 +210,58 @@ export function SettingsForm({ onClose }: Props): JSX.Element {
         <section className="flex flex-col gap-4">
           <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">Appearance</p>
 
-          <div className="flex flex-col gap-1.5">
-            <Label>App Theme</Label>
-            <div className="grid grid-cols-3 gap-1.5">
-              {THEMES.map(({ id, label, icon: Icon }) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => void updateSettings({ theme: id })}
-                  className={cn(
-                    'flex items-center gap-2 px-3 py-2 rounded-md border text-xs transition-colors text-left',
-                    settings.theme === id
-                      ? 'border-brand-accent/60 bg-brand-accent/10 text-zinc-100'
-                      : 'border-brand-panel text-zinc-400 hover:border-zinc-600 hover:text-zinc-200'
-                  )}
-                >
-                  <Icon size={12} className="flex-shrink-0" />
-                  {label}
-                </button>
-              ))}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex flex-col gap-1.5">
+              <Label>App Theme</Label>
+              <Select
+                value={settings.theme ?? 'dark'}
+                onValueChange={(v) => void updateSettings({ theme: v as AppSettings['theme'] })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {THEMES.map(({ id, label }) => (
+                    <SelectItem key={id} value={id}>{label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label>Terminal Theme {!activeSessionId && <span className="text-zinc-600 font-normal">(no active session)</span>}</Label>
+              <Select
+                value={activeTerminalTheme || '__auto__'}
+                onValueChange={(v) => { if (activeSessionId) setTerminalTheme(activeSessionId, v === '__auto__' ? '' : v) }}
+                disabled={!activeSessionId}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Auto (app theme)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__auto__">Auto (app theme)</SelectItem>
+                  <SelectSeparator />
+                  {TERMINAL_THEME_LIST.map(({ id, label }) => (
+                    <SelectItem key={id} value={id}>{label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label>Terminal Theme {activeSessionId ? '' : <span className="text-zinc-600 font-normal">(no active session)</span>}</Label>
-            <Select
-              value={activeTerminalTheme || '__auto__'}
-              onValueChange={(v) => { if (activeSessionId) setTerminalTheme(activeSessionId, v === '__auto__' ? '' : v) }}
-              disabled={!activeSessionId}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Auto (app theme)" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__auto__">Auto (app theme)</SelectItem>
-                <SelectSeparator />
-                {TERMINAL_THEME_LIST.map(({ id, label }) => (
-                  <SelectItem key={id} value={id}>{label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="uiFontSize">UI font size</Label>
+              <Input id="uiFontSize" type="number" min={10} max={24} {...register('uiFontSize', { valueAsNumber: true })} />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="editorFontSize">Editor font size</Label>
+              <Input id="editorFontSize" type="number" min={8} max={32} {...register('editorFontSize', { valueAsNumber: true })} />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="termFontSize">Terminal font size</Label>
+              <Input id="termFontSize" type="number" min={8} max={32} {...register('fontSize', { valueAsNumber: true })} />
+            </div>
           </div>
 
           <div className="flex items-center justify-between">
@@ -273,15 +285,9 @@ export function SettingsForm({ onClose }: Props): JSX.Element {
         <section className="flex flex-col gap-4">
           <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">Terminal</p>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="fontSize">Font size</Label>
-              <Input id="fontSize" type="number" min={8} max={32} {...register('fontSize', { valueAsNumber: true })} />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="fontFamily">Font family</Label>
-              <Input id="fontFamily" placeholder="monospace" {...register('fontFamily')} />
-            </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="fontFamily">Terminal font family</Label>
+            <Input id="fontFamily" placeholder="monospace" {...register('fontFamily')} />
           </div>
 
           <div className="flex flex-col gap-1.5">

@@ -177,6 +177,7 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
     removeLayoutLeaf(tabId, leafId)
   }
   const theme = useStore((s) => s.settings.theme)
+  const editorFontSize = useStore((s) => s.settings.editorFontSize ?? 13)
   const editors = useInstalledEditors()
   const ctxRef = useRef<HTMLDivElement>(null)
 
@@ -284,7 +285,7 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
               })
             }}
             options={{
-              fontSize: 13,
+              fontSize: editorFontSize,
               minimap: { enabled: false },
               wordWrap: 'on',
               scrollBeyondLastLine: false,

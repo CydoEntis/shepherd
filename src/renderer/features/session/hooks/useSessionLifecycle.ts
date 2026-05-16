@@ -3,10 +3,11 @@ import { toast } from 'sonner'
 import { ipc } from '../../../lib/ipc'
 import { IPC } from '@shared/ipc-channels'
 import { useStore } from '../../../store/root.store'
-import { listSessions, createSession } from '../session.service'
-import { getWindowInfo } from '../../window/window.service'
+import { listSessions, createSession, killSession } from '../session.service'
+import { getWindowInfo, pickFolder } from '../../window/window.service'
 import { loadLayout } from '../persistence.service'
 import { findTabForSession } from '../../layout/layout-tree'
+import type { LayoutNode } from '../../layout/layout-tree'
 import { DEFAULT_COLS, DEFAULT_ROWS } from '@shared/constants'
 import type { PersistedLayout, SessionMeta, SessionExitPayload, WindowInitialSessionsPayload, TabReattachedPayload, NotePanePayload } from '@shared/ipc-types'
 
@@ -229,6 +230,44 @@ export function useSessionLifecycle(): void {
       removeNotePaneFromLayout(noteId, panel)
     })
 
+    const findFirstTerminalSessionId = (node: LayoutNode): string | null => {
+      if (node.type === 'leaf') return node.panel === 'terminal' ? node.sessionId : null
+      for (const child of node.children) {
+        const found = findFirstTerminalSessionId(child)
+        if (found) return found
+      }
+      return null
+    }
+
+    const onOpenProject = (): void => {
+      pickFolder().then((folder) => {
+        if (!folder) return
+        const { tabOrder, paneTree } = useStore.getState()
+        // Identify the home terminal — first non-root tab's first terminal session
+        const homeTabId = tabOrder.find((id) => id !== '__root__')
+        const homeSessionId = homeTabId && paneTree[homeTabId]
+          ? findFirstTerminalSessionId(paneTree[homeTabId])
+          : null
+
+        createSession({
+          name: folder.split(/[\\/]/).pop() ?? 'project',
+          cwd: folder,
+          cols: DEFAULT_COLS,
+          rows: DEFAULT_ROWS,
+          projectRoot: folder,
+        }).then((meta) => {
+          useStore.getState().upsertSession(meta)
+          useStore.getState().addTab(meta.sessionId)
+          // Kill the home terminal after the new one is registered
+          if (homeSessionId) {
+            killSession(homeSessionId).catch(() => {})
+            useStore.getState().removePaneBySessionId(homeSessionId)
+          }
+        }).catch(() => {})
+      }).catch(() => {})
+    }
+    document.addEventListener('acc:open-project', onOpenProject)
+
     const offOpenPath = ipc.on(IPC.OPEN_PATH, (payload) => {
       const { path: folderPath } = payload as { path: string }
       const { settings } = useStore.getState()
@@ -246,6 +285,7 @@ export function useSessionLifecycle(): void {
     })
 
     return () => {
+      document.removeEventListener('acc:open-project', onOpenProject)
       offInitial()
       offMeta()
       offExit()
