@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { ChevronRight, ChevronDown, File, Folder, FolderOpen } from 'lucide-react'
+import { ChevronRight, ChevronDown, File, FileCode, FileJson, FileText, FileImage, Folder, FolderOpen } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { readDir, getGitStatus, renameEntry, trashEntry, writeFile, mkdir, findFiles } from '../fs.service'
 import { FileTreeContextMenu } from './FileTreeContextMenu'
@@ -27,6 +27,65 @@ function statusLabel(xy: string): string {
 
 function norm(p: string): string {
   return p.replace(/\\/g, '/')
+}
+
+const EXT_COLOR: Record<string, string> = {
+  ts: 'text-blue-400', tsx: 'text-blue-400',
+  js: 'text-yellow-400', jsx: 'text-yellow-400', mjs: 'text-yellow-400', cjs: 'text-yellow-400',
+  py: 'text-green-400', pyi: 'text-green-400',
+  rs: 'text-orange-400',
+  go: 'text-cyan-400',
+  rb: 'text-red-400', php: 'text-violet-400',
+  java: 'text-orange-300', kt: 'text-violet-300', swift: 'text-orange-300',
+  cpp: 'text-blue-300', c: 'text-blue-300', h: 'text-blue-300', cs: 'text-blue-300',
+  css: 'text-violet-400', scss: 'text-violet-400', sass: 'text-violet-400', less: 'text-violet-400',
+  html: 'text-orange-400', htm: 'text-orange-400', vue: 'text-green-400', svelte: 'text-orange-400',
+  json: 'text-yellow-300', jsonc: 'text-yellow-300',
+  yaml: 'text-yellow-300', yml: 'text-yellow-300', toml: 'text-yellow-300',
+  md: 'text-blue-300', mdx: 'text-blue-300', txt: 'text-zinc-400', rst: 'text-zinc-400',
+  png: 'text-pink-400', jpg: 'text-pink-400', jpeg: 'text-pink-400', gif: 'text-pink-400',
+  svg: 'text-pink-400', ico: 'text-pink-400', webp: 'text-pink-400', bmp: 'text-pink-400',
+  sh: 'text-green-300', bash: 'text-green-300', zsh: 'text-green-300', fish: 'text-green-300', ps1: 'text-blue-300',
+  env: 'text-zinc-400', lock: 'text-zinc-500', nsh: 'text-zinc-400', sql: 'text-sky-400',
+}
+
+const NAME_COLOR: Record<string, string> = {
+  'package.json': 'text-yellow-400', 'package-lock.json': 'text-zinc-500',
+  'tsconfig.json': 'text-blue-300', 'jsconfig.json': 'text-yellow-300',
+  '.gitignore': 'text-orange-300', '.gitattributes': 'text-orange-300',
+  '.env': 'text-zinc-400', '.env.local': 'text-zinc-400', '.env.example': 'text-zinc-400',
+  'dockerfile': 'text-blue-400', 'docker-compose.yml': 'text-blue-400', 'docker-compose.yaml': 'text-blue-400',
+  'cargo.toml': 'text-orange-400', 'cargo.lock': 'text-zinc-500',
+  'makefile': 'text-red-300', 'readme.md': 'text-blue-300', 'license': 'text-zinc-400',
+}
+
+type FileIconType = 'code' | 'json' | 'text' | 'image' | 'default'
+
+const CODE_EXTS = new Set(['ts','tsx','js','jsx','mjs','cjs','py','pyi','rs','go','rb','php','java','kt','swift','cpp','c','h','cs','css','scss','sass','less','html','htm','vue','svelte','sh','bash','zsh','fish','ps1','sql'])
+const JSON_EXTS = new Set(['json','jsonc','yaml','yml','toml'])
+const TEXT_EXTS = new Set(['md','mdx','txt','rst'])
+const IMAGE_EXTS = new Set(['png','jpg','jpeg','gif','svg','ico','webp','bmp','tiff'])
+
+function getFileIconMeta(name: string): { type: FileIconType; color: string } {
+  const lower = name.toLowerCase()
+  const color = NAME_COLOR[lower] ?? EXT_COLOR[lower.split('.').pop() ?? ''] ?? 'text-zinc-400'
+  const ext = lower.split('.').pop() ?? ''
+  let type: FileIconType = 'default'
+  if (CODE_EXTS.has(ext)) type = 'code'
+  else if (JSON_EXTS.has(ext)) type = 'json'
+  else if (TEXT_EXTS.has(ext)) type = 'text'
+  else if (IMAGE_EXTS.has(ext)) type = 'image'
+  return { type, color }
+}
+
+function FileIcon({ name }: { name: string }): JSX.Element {
+  const { type, color } = getFileIconMeta(name)
+  const props = { size: 13, className: color }
+  if (type === 'code') return <FileCode {...props} />
+  if (type === 'json') return <FileJson {...props} />
+  if (type === 'text') return <FileText {...props} />
+  if (type === 'image') return <FileImage {...props} />
+  return <File {...props} />
 }
 
 function expandedKey(root: string): string {
@@ -74,7 +133,7 @@ function InlineCreateRow({ type, depth, value, onChange, onSubmit, onCancel }: I
     >
       <span className="flex-shrink-0 w-3" />
       <span className="flex-shrink-0 text-zinc-400 w-3.5 flex items-center">
-        {type === 'folder' ? <Folder size={13} className="text-yellow-500/70" /> : <File size={13} />}
+        {type === 'folder' ? <Folder size={13} className="text-yellow-500/70" /> : <FileIcon name="new-file" />}
       </span>
       <Input
         ref={inputRef}
@@ -196,10 +255,10 @@ function TreeNode({ entry, depth, gitMap, projectRoot, activeFilePath, focusedPa
           {entry.isDirectory
             ? <span className="flex-shrink-0 text-zinc-500 w-3">{isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}</span>
             : <span className="flex-shrink-0 w-3" />}
-          <span className="flex-shrink-0 text-zinc-400 w-3.5 flex items-center">
+          <span className="flex-shrink-0 w-3.5 flex items-center">
             {entry.isDirectory
               ? isExpanded ? <FolderOpen size={13} className="text-yellow-500/70" /> : <Folder size={13} className="text-yellow-500/70" />
-              : <File size={13} />}
+              : <FileIcon name={entry.name} />}
           </span>
           {isRenaming ? (
             <Input
@@ -592,12 +651,15 @@ export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileC
                 key={filePath}
                 onClick={() => onFileClick(filePath, undefined)}
                 className={cn(
-                  'w-full flex flex-col px-3 py-1.5 text-left rounded-sm transition-colors',
+                  'w-full flex items-center gap-1.5 px-2 py-1 text-left rounded-sm transition-colors',
                   isActive ? 'bg-brand-panel/60' : 'hover:bg-brand-panel/40'
                 )}
               >
-                <span className="text-[11px] text-zinc-300 truncate">{name}</span>
-                {dir && <span className="text-[10px] text-zinc-600 truncate">{dir}</span>}
+                <span className="flex-shrink-0 w-3.5 flex items-center"><FileIcon name={name} /></span>
+                <span className="flex-1 min-w-0">
+                  <span className="text-[11px] text-zinc-300 truncate block">{name}</span>
+                  {dir && <span className="text-[10px] text-zinc-600 truncate block">{dir}</span>}
+                </span>
               </button>
             )
           })}
