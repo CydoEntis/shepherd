@@ -56,6 +56,7 @@ const MONACO_THEME_LIST = [
   { id: 'dawn',               label: 'Dawn' },
   { id: 'amy',                label: 'Amy' },
   { id: 'birds-of-paradise',  label: 'Birds of Paradise' },
+  { id: 'solarized-light',    label: 'Solarized Light' },
 ]
 
 const HOTKEY_FIELDS: { key: keyof AppSettings['hotkeys']; label: string }[] = [

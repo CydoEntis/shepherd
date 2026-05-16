@@ -22,6 +22,7 @@ import UpstreamSunburstTheme from '../../../assets/monaco-themes/upstream-sunbur
 import TwilightTheme from '../../../assets/monaco-themes/twilight.json'
 import VibrantInkTheme from '../../../assets/monaco-themes/vibrant-ink.json'
 import BirdsOfParadiseTheme from '../../../assets/monaco-themes/birds-of-paradise.json'
+import SolarizedLightTheme from '../../../assets/monaco-themes/solarized-light.json'
 
 type EditorInstance = Parameters<OnMount>[0]
 type MonacoInstance = Parameters<OnMount>[1]
@@ -62,6 +63,7 @@ const MONACO_THEMES = [
   { id: 'dawn',               label: 'Dawn' },
   { id: 'amy',                label: 'Amy' },
   { id: 'birds-of-paradise',  label: 'Birds of Paradise' },
+  { id: 'solarized-light',    label: 'Solarized Light' },
 ] as const
 
 type MonacoThemeId = typeof MONACO_THEMES[number]['id']
@@ -173,6 +175,7 @@ function defineCustomThemes(monaco: MonacoInstance): void {
   monaco.editor.defineTheme('twilight',          TwilightTheme as ThemeData)
   monaco.editor.defineTheme('vibrant-ink',       VibrantInkTheme as ThemeData)
   monaco.editor.defineTheme('birds-of-paradise', BirdsOfParadiseTheme as ThemeData)
+  monaco.editor.defineTheme('solarized-light',   SolarizedLightTheme as ThemeData)
 }
 
 function CtxSubMenu({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
