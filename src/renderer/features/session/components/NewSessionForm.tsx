@@ -26,6 +26,7 @@ import { createWorktree } from '../../fs/fs.service'
 import { pickFolder } from '../../window/window.service'
 import { useStore } from '../../../store/root.store'
 import { cn, normalizePath, shortPath } from '../../../lib/utils'
+import { ROOT_WORKSPACE_ID } from '@shared/ipc-types'
 import { toast } from 'sonner'
 import { DEFAULT_COLS, DEFAULT_ROWS } from '@shared/constants'
 
@@ -71,6 +72,7 @@ export function NewSessionForm({ variant = 'icon' }: { variant?: 'icon' | 'sideb
   const splitPane = useStore((s) => s.splitPane)
   const settings = useStore((s) => s.settings)
   const workspaces = useStore((s) => s.workspaces)
+  const activeWorkspaceId = useStore((s) => s.activeWorkspaceId)
   const groups = settings.sessionGroups ?? []
 
   useEffect(() => {
@@ -190,6 +192,7 @@ export function NewSessionForm({ variant = 'icon' }: { variant?: 'icon' | 'sideb
         splitPane(splitTarget.tabId, splitTarget.sessionId, splitTarget.direction, meta)
       } else {
         const groupId = selectedGroupId === NO_GROUP ? undefined : selectedGroupId || undefined
+        const workspaceId = activeWorkspaceId !== ROOT_WORKSPACE_ID ? activeWorkspaceId : undefined
         const meta = await createSession({
           name: data.name,
           agentCommand,
@@ -197,6 +200,7 @@ export function NewSessionForm({ variant = 'icon' }: { variant?: 'icon' | 'sideb
           cols: DEFAULT_COLS,
           rows: DEFAULT_ROWS,
           groupId,
+          workspaceId,
           yoloMode: yoloMode || undefined,
           noSandbox: skipSandbox || undefined,
           useSandbox: useSandboxMode || undefined

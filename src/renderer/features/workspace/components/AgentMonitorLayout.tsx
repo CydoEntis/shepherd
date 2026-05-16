@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
 import { PaneTreeRenderer } from '../../terminal/components/PaneTreeRenderer'
+import { WorkspaceDashboard } from './WorkspaceDashboard'
 import { useStore } from '../../../store/root.store'
 import { removeWorktree } from '../../fs/fs.service'
 
@@ -19,7 +20,11 @@ export function AgentMonitorLayout({ sessionId, onSessionClose }: Props): JSX.El
     onSessionClose?.()
   }, [sessionId, onSessionClose])
 
-  if (!paneTree) return <div className="flex-1 min-h-0" />
+  if (!paneTree) return (
+    <div className="relative w-full h-full">
+      <WorkspaceDashboard />
+    </div>
+  )
 
   return (
     <PaneTreeRenderer

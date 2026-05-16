@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { ChevronRight, ChevronDown, File, Folder, FolderOpen } from 'lucide-react'
 import { createPortal } from 'react-dom'
-import { readDir, getGitStatus, renameEntry, trashEntry, writeFile, mkdir } from '../fs.service'
+import { readDir, getGitStatus, renameEntry, trashEntry, writeFile, mkdir, findFiles } from '../fs.service'
 import { FileTreeContextMenu } from './FileTreeContextMenu'
 import { useInstalledEditors } from '../hooks/useInstalledEditors'
 import { useLayoutDnd } from '../../layout/dnd/LayoutDndContext'
@@ -273,9 +273,10 @@ interface Props {
   activeFilePath?: string | null
   onFileClick: (path: string, xy: string | undefined) => void
   refreshTick?: number
+  filterText?: string
 }
 
-export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileClick, refreshTick = 0 }: Props): JSX.Element {
+export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileClick, refreshTick = 0, filterText = '' }: Props): JSX.Element {
   const [rootEntries, setRootEntries] = useState<FsEntry[]>([])
   const [childrenMap, setChildrenMap] = useState<Map<string, FsEntry[]>>(new Map())
   const [gitMap, setGitMap] = useState<Map<string, string>>(new Map())
@@ -287,6 +288,8 @@ export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileC
   const treeBodyRef = useRef<HTMLDivElement>(null)
   const focusedPathRef = useRef<string | null>(null)
   const editors = useInstalledEditors()
+  const [allFiles, setAllFiles] = useState<string[]>([])
+  const [allFilesLoaded, setAllFilesLoaded] = useState(false)
 
   // Always update ref synchronously so navigate() reads the latest path without waiting for a render
   const setFocusedPath = useCallback((path: string | null) => {
@@ -302,7 +305,18 @@ export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileC
     setExpanded(loadExpanded(projectRoot))
     setChildrenMap(new Map())
     setFocusedPath(null)
+    setAllFiles([])
+    setAllFilesLoaded(false)
   }, [projectRoot])
+
+  // Eagerly index all files once filter mode is first activated
+  useEffect(() => {
+    if (!filterText || allFilesLoaded || !projectRoot) return
+    findFiles(projectRoot).then((files) => {
+      setAllFiles(files)
+      setAllFilesLoaded(true)
+    }).catch(() => {})
+  }, [filterText, allFilesLoaded, projectRoot])
 
   useEffect(() => {
     if (!activeFilePath || !projectRoot) return
@@ -523,6 +537,45 @@ export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileC
     return (
       <div className="flex-1 flex items-center justify-center">
         <p className="text-xs text-zinc-600">No project selected</p>
+      </div>
+    )
+  }
+
+  // Filter mode: show a flat list of matching files
+  if (filterText) {
+    const lower = filterText.toLowerCase()
+    const matched = allFilesLoaded
+      ? allFiles.filter((f) => norm(f).toLowerCase().includes(lower))
+      : []
+    return (
+      <div className="flex flex-col flex-1 min-h-0">
+        <div className="flex-1 overflow-y-auto py-1 px-1">
+          {!allFilesLoaded && (
+            <p className="text-xs text-zinc-600 text-center py-6">Indexing…</p>
+          )}
+          {allFilesLoaded && matched.length === 0 && (
+            <p className="text-xs text-zinc-600 text-center py-6">No files match</p>
+          )}
+          {matched.map((filePath) => {
+            const name = norm(filePath).split('/').pop() ?? filePath
+            const rel = norm(filePath).slice(projectRoot.length + 1)
+            const dir = rel.includes('/') ? rel.substring(0, rel.lastIndexOf('/')) : ''
+            const isActive = activeFilePath !== null && norm(filePath) === norm(activeFilePath)
+            return (
+              <button
+                key={filePath}
+                onClick={() => onFileClick(filePath, undefined)}
+                className={cn(
+                  'w-full flex flex-col px-3 py-1.5 text-left rounded-sm transition-colors',
+                  isActive ? 'bg-brand-panel/60' : 'hover:bg-brand-panel/40'
+                )}
+              >
+                <span className="text-[11px] text-zinc-300 truncate">{name}</span>
+                {dir && <span className="text-[10px] text-zinc-600 truncate">{dir}</span>}
+              </button>
+            )
+          })}
+        </div>
       </div>
     )
   }

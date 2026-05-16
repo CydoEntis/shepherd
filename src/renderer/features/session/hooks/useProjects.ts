@@ -59,7 +59,6 @@ export function useProjects(): UseProjectsReturn {
       try {
         const meta = await createSession({
           name: folder.split(/[\\/]/).pop() ?? 'project',
-          agentCommand: 'claude',
           cwd: folder,
           cols: DEFAULT_COLS,
           rows: DEFAULT_ROWS,

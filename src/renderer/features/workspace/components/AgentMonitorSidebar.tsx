@@ -1,10 +1,11 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
-import { Plus, ChevronDown, ChevronRight, FolderOpen, FolderTree, X, Users, FileText } from 'lucide-react'
+import { Plus, ChevronDown, ChevronRight, FolderOpen, FolderTree, X, Users, Terminal, Search } from 'lucide-react'
 import { useStore } from '../../../store/root.store'
-import { patchSession, killSession } from '../../session/session.service'
+import { patchSession, killSession, createSession } from '../../session/session.service'
+import { DEFAULT_COLS, DEFAULT_ROWS } from '@shared/constants'
 import { EditSessionModal } from '../../session/components/EditSessionModal'
 import { EditGroupModal } from '../../session/components/EditGroupModal'
-import { removeWorktree } from '../../fs/fs.service'
+import { removeWorktree, copyFile } from '../../fs/fs.service'
 import { createWorkspace, deleteWorkspace } from '../workspace.service'
 import { detachTab, reattachTab, moveToWindow } from '../../window/window.service'
 import { NewWorkspaceModal } from './NewWorkspaceModal'
@@ -20,6 +21,7 @@ import { SessionRow } from './SessionRow'
 import { SessionCtxMenu } from './SessionCtxMenu'
 import { GroupCtxMenu } from './GroupCtxMenu'
 import { NewGroupModal } from './NewGroupModal'
+import { FileTree } from '../../fs/components/FileTree'
 import type { SessionMeta } from '@shared/ipc-types'
 import { ROOT_WORKSPACE_ID } from '@shared/ipc-types'
 
@@ -53,15 +55,15 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
 
   const focusedLeafId = useStore((s) => s.focusedLeafId)
   const setFocusedLeaf = useStore((s) => s.setFocusedLeaf)
-  const openFilesList = useStore((s) => s.openFilesList)
-  const removeOpenFile = useStore((s) => s.removeOpenFile)
-  const removeFileFromAllLayouts = useStore((s) => s.removeFileFromAllLayouts)
   const { startDrag, endDrag } = useLayoutDnd()
   const ghostRef = useRef<HTMLImageElement | null>(null)
   const GHOST_SRC = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
 
   const { requestClose, modal: closeModal } = useConfirmClose()
 
+  const [activeView, setActiveView] = useState<'files' | 'sessions'>('sessions')
+  const [fileRefreshTick, setFileRefreshTick] = useState(0)
+  const [fileSearch, setFileSearch] = useState('')
   const [wsOpen, setWsOpen] = useState(false)
   const [showNewWsModal, setShowNewWsModal] = useState(false)
   const [showNewGroupModal, setShowNewGroupModal] = useState(false)
@@ -79,6 +81,48 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId) ?? null
   const normalizedActive = activeWorkspace?.rootPath ? normalizePath(activeWorkspace.rootPath) : undefined
 
+  // File tree root: named workspace folder (anchored) | home workspace follows session cwd, falls back to rootPath
+  const fileTreeRoot = useMemo(() => {
+    if (!isRootWorkspace && normalizedActive) return normalizedActive
+    const id = focusedSessionId ?? activeSessionId
+    const cwd = id ? sessions[id]?.cwd : undefined
+    if (cwd) return normalizePath(cwd)
+    return normalizedActive ?? ''
+  }, [isRootWorkspace, normalizedActive, focusedSessionId, activeSessionId, sessions])
+
+  // Switch to Files tab when a project root first appears (project opened or workspace selected)
+  const prevRootRef = useRef(fileTreeRoot)
+  useEffect(() => {
+    if (fileTreeRoot && !prevRootRef.current) setActiveView('files')
+    prevRootRef.current = fileTreeRoot
+  }, [fileTreeRoot])
+
+  // When switching to a named workspace with a folder: show Files tab + auto-create session if none
+  useEffect(() => {
+    if (isRootWorkspace || !normalizedActive || isRestoringLayout) return
+    setActiveView('files')
+    if (projectSessions.length === 0) {
+      const name = normalizedActive.split('/').filter(Boolean).pop() ?? 'workspace'
+      createSession({ name, cwd: normalizedActive, cols: DEFAULT_COLS, rows: DEFAULT_ROWS, workspaceId: activeWorkspaceId })
+        .then((meta) => { upsertSession(meta); addTab(meta.sessionId) })
+        .catch(() => {})
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeWorkspaceId])
+
+  // Refresh file tree when a file is saved from the editor
+  useEffect(() => {
+    const handler = (): void => setFileRefreshTick((t) => t + 1)
+    document.addEventListener('acc:file-saved', handler)
+    return () => document.removeEventListener('acc:file-saved', handler)
+  }, [])
+
+  // Refresh + clear search when the shown directory changes (cd or workspace switch)
+  useEffect(() => {
+    setFileRefreshTick((t) => t + 1)
+    setFileSearch('')
+  }, [fileTreeRoot])
+
   const currentWindowSessionIds = useMemo(() => {
     const ids = new Set<string>()
     for (const tabId of tabOrder) {
@@ -92,14 +136,23 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
     Object.values(sessions)
       .filter((m) => {
         if (!currentWindowSessionIds.has(m.sessionId)) return false
-        if (isRootWorkspace) return true
+        if (isRootWorkspace) {
+          if (m.workspaceId) return m.workspaceId === ROOT_WORKSPACE_ID
+          // Untagged session: only show in Home if its path doesn't match any named workspace
+          const sessionPath = normalizePath(m.projectRoot ?? m.cwd)
+          return !workspaces.some((w) => {
+            if (w.isRoot || !w.rootPath) return false
+            const wsPath = normalizePath(w.rootPath)
+            return sessionPath === wsPath || sessionPath.startsWith(wsPath + '/')
+          })
+        }
         if (m.workspaceId) return m.workspaceId === activeWorkspaceId
         if (!normalizedActive) return false
         const root = normalizePath(m.projectRoot ?? m.cwd)
         return root === normalizedActive || root.startsWith(normalizedActive + '/')
       })
       .sort((a, b) => b.createdAt - a.createdAt),
-    [sessions, currentWindowSessionIds, isRootWorkspace, activeWorkspaceId, normalizedActive]
+    [sessions, currentWindowSessionIds, isRootWorkspace, activeWorkspaceId, normalizedActive, workspaces]
   )
 
   const worktreeStats = useWorktreeStats(isRootWorkspace ? [] : projectSessions)
@@ -148,7 +201,15 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
         const remaining = Object.values(useStore.getState().sessions)
           .filter((s) => {
             if (s.sessionId === meta.sessionId) return false
-            if (isRootWorkspace) return true
+            if (isRootWorkspace) {
+              if (s.workspaceId) return s.workspaceId === ROOT_WORKSPACE_ID
+              const sessionPath = normalizePath(s.projectRoot ?? s.cwd)
+              return !workspaces.some((w) => {
+                if (w.isRoot || !w.rootPath) return false
+                const wsPath = normalizePath(w.rootPath)
+                return sessionPath === wsPath || sessionPath.startsWith(wsPath + '/')
+              })
+            }
             if (s.workspaceId) return s.workspaceId === activeWorkspaceId
             if (!normalizedActive) return false
             const root = normalizePath(s.projectRoot ?? s.cwd)
@@ -276,61 +337,6 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
     }
     state.setFocusedLeaf(newLeaf.id)
   }, [activeSessionId, onSelectSession, setFocusedLeaf])
-
-  const killFile = useCallback((filePath: string) => {
-    removeOpenFile(filePath)
-    removeFileFromAllLayouts(filePath)
-  }, [removeOpenFile, removeFileFromAllLayouts])
-
-  const openFilesSection = openFilesList.length === 0 ? null : (
-    <div className="flex-shrink-0 border-t border-brand-panel/40 py-1">
-      <div className="px-3 py-1 text-[10px] text-zinc-600 uppercase tracking-wider font-semibold select-none">
-        Open Files
-      </div>
-      {openFilesList.map((filePath) => {
-        const name = normalizePath(filePath).split('/').pop() ?? filePath
-        const ext = name.includes('.') ? name.split('.').pop()?.toLowerCase() ?? '' : ''
-        const stem = ext ? name.slice(0, name.length - ext.length - 1) : name
-        const isActive = filePath === activeFilePath
-        return (
-          <div
-            key={filePath}
-            draggable
-            onDragStart={(e) => {
-              if (!ghostRef.current) {
-                const img = new Image(); img.src = GHOST_SRC; ghostRef.current = img
-              }
-              e.dataTransfer.setDragImage(ghostRef.current, 0, 0)
-              e.dataTransfer.effectAllowed = 'move'
-              e.dataTransfer.setData('text/plain', filePath)
-              startDrag({ type: 'file-path', filePath })
-            }}
-            onDragEnd={() => endDrag()}
-            onClick={() => navigateToFile(filePath)}
-            className={cn(
-              'flex items-center gap-1.5 px-2 py-1.5 mx-1 rounded select-none group transition-colors cursor-pointer',
-              isActive
-                ? 'bg-brand-panel/70 text-zinc-200'
-                : 'text-zinc-500 hover:text-zinc-300 hover:bg-brand-panel/40'
-            )}
-          >
-            <FileText size={11} className={cn('flex-shrink-0', isActive ? 'text-brand-accent/80' : 'text-zinc-600')} />
-            <span className="flex-1 min-w-0 truncate text-[11px]">
-              {stem}
-              {ext && <span className={isActive ? 'text-zinc-500' : 'text-zinc-700'}>.{ext}</span>}
-            </span>
-            <button
-              onClick={(e) => { e.stopPropagation(); killFile(filePath) }}
-              className="flex-shrink-0 opacity-0 group-hover:opacity-100 p-0.5 rounded text-zinc-600 hover:text-zinc-300 transition-colors"
-              title="Remove file"
-            >
-              <X size={10} />
-            </button>
-          </div>
-        )
-      })}
-    </div>
-  )
 
   const handleSessionSelect = useCallback((sessionId: string): void => {
     const tabId = findTabForSession(paneTree, sessionId)
@@ -469,8 +475,19 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
   const handleFileDrop = (e: React.DragEvent): void => {
     e.preventDefault()
     setIsDragOver(false)
-    if (!activeSessionId || activeSessionId === '__root__') return
     const files = Array.from(e.dataTransfer.files)
+    if (activeView === 'files' && fileTreeRoot) {
+      for (const file of files) {
+        const srcPath = (file as unknown as { path: string }).path
+        if (!srcPath) continue
+        const destPath = fileTreeRoot + '/' + file.name
+        copyFile(srcPath, destPath)
+          .then(() => setFileRefreshTick((t) => t + 1))
+          .catch(() => toast.error(`Failed to copy ${file.name}`))
+      }
+      return
+    }
+    if (!activeSessionId || activeSessionId === '__root__') return
     for (const file of files) {
       const path = (file as unknown as { path: string }).path
       if (!path) continue
@@ -496,7 +513,7 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
           >
             <FolderOpen size={12} className="text-zinc-500 flex-shrink-0" />
             <span className="text-xs font-medium text-zinc-300 truncate flex-1">
-              {isRootWorkspace ? 'Root' : (activeWorkspace?.name ?? 'Workspace')}
+              {activeWorkspace?.name ?? 'Home'}
             </span>
             <ChevronDown size={10} className={cn('text-zinc-500 transition-transform flex-shrink-0', wsOpen && 'rotate-180')} />
           </button>
@@ -525,7 +542,7 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
                 onClick={() => { onWorkspaceChange(ROOT_WORKSPACE_ID); setWsOpen(false) }}
                 className={cn('w-full px-3 py-1.5 text-xs text-left transition-colors hover:bg-brand-panel', isRootWorkspace && 'bg-brand-panel/60 text-zinc-200')}
               >
-                <span className={isRootWorkspace ? 'text-zinc-200' : 'text-zinc-400'}>Root</span>
+                <span className={isRootWorkspace ? 'text-zinc-200' : 'text-zinc-400'}>{workspaces.find((w) => w.isRoot)?.name ?? 'Home'}</span>
               </button>
               {workspaces.filter((w) => !w.isRoot).length > 0 && <div className="h-px bg-brand-panel my-1" />}
               {workspaces.filter((w) => !w.isRoot).map((w) => (
@@ -574,47 +591,63 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
         )}
       </div>
 
-      {/* Body */}
+      {/* Body — always files */}
       <div className="flex flex-col flex-1 min-h-0" ref={sidebarBodyRef}>
-        {isRootWorkspace ? (
-          /* Root: sessions always visible, buttons pinned bottom */
-          <div className="flex flex-col flex-1 min-h-0">
-            <div className="flex-1 overflow-y-auto min-h-0 py-1">
-              {sessionListContent}
-              {openFilesSection}
-            </div>
-            <div className="flex-shrink-0 flex gap-1.5 p-2 border-t border-brand-panel/40">
-              <button
-                onClick={() => document.dispatchEvent(new CustomEvent('acc:new-session'))}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded text-xs text-zinc-500 hover:text-zinc-300 hover:bg-brand-panel/60 transition-colors"
-              >
-                <Plus size={12} /> Session
-              </button>
-              <button
-                onClick={() => setShowNewGroupModal(true)}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded text-xs text-zinc-500 hover:text-zinc-300 hover:bg-brand-panel/60 transition-colors"
-              >
-                <Users size={12} /> Group
-              </button>
-            </div>
+        <div className="flex flex-col flex-1 min-h-0">
+          {/* Folder header */}
+          <div className="flex items-center gap-2 px-3 py-1.5 border-b border-brand-panel/40 flex-shrink-0">
+            <span className="text-xs text-zinc-400 truncate flex-1 min-w-0 font-medium">
+              {fileTreeRoot ? fileTreeRoot.split('/').filter(Boolean).pop() ?? fileTreeRoot : 'No folder open'}
+            </span>
+            <button
+              onClick={() => document.dispatchEvent(new CustomEvent('acc:open-project'))}
+              title="Open Folder"
+              className="text-zinc-600 hover:text-zinc-300 transition-colors flex-shrink-0"
+            >
+              <FolderOpen size={12} />
+            </button>
           </div>
-        ) : (
-          /* Workspace: sessions only */
-          <div className="flex flex-col flex-1 min-h-0">
-            <div className="flex-1 overflow-y-auto min-h-0 py-1">
-              {sessionListContent}
-              {openFilesSection}
-            </div>
-            <div className="flex-shrink-0 p-2 border-t border-brand-panel/40">
+          {fileTreeRoot ? (
+            <>
+              <div className="flex-shrink-0 px-2 py-1.5 border-b border-brand-panel/40">
+                <div className="flex items-center gap-1.5 px-2 py-1 bg-brand-panel/40 border border-brand-panel/60 rounded">
+                  <Search size={11} className="text-zinc-600 flex-shrink-0" />
+                  <input
+                    value={fileSearch}
+                    onChange={(e) => setFileSearch(e.target.value)}
+                    placeholder="Search files…"
+                    className="flex-1 bg-transparent text-[11px] text-zinc-300 placeholder:text-zinc-600 outline-none min-w-0"
+                  />
+                  {fileSearch && (
+                    <button onClick={() => setFileSearch('')} className="text-zinc-600 hover:text-zinc-400 flex-shrink-0">
+                      <X size={10} />
+                    </button>
+                  )}
+                </div>
+              </div>
+              <FileTree
+                projectRoot={fileTreeRoot}
+                activeFilePath={activeFilePath}
+                onFileClick={(path) => navigateToFile(path)}
+                refreshTick={fileRefreshTick}
+                filterText={fileSearch}
+              />
+            </>
+          ) : (
+            <div className="flex flex-col items-center gap-3 px-4 py-10">
+              <FolderOpen size={28} className="text-zinc-700" />
+              <p className="text-xs text-zinc-500 text-center leading-relaxed">
+                No folder open.<br />Open a project to browse files.
+              </p>
               <button
-                onClick={() => document.dispatchEvent(new CustomEvent('acc:new-session'))}
-                className="w-full flex items-center justify-center gap-1.5 py-2 rounded text-xs text-zinc-500 hover:text-zinc-300 hover:bg-brand-panel/60 transition-colors"
+                onClick={() => document.dispatchEvent(new CustomEvent('acc:open-project'))}
+                className="text-xs px-3 py-1.5 rounded bg-brand-accent/20 text-brand-accent border border-brand-accent/30 hover:bg-brand-accent/30 transition-colors"
               >
-                <Plus size={12} /> New Session
+                Open Folder
               </button>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {ctxMenu && (

@@ -16,6 +16,7 @@ import { NewSessionForm } from './features/session/components/NewSessionForm'
 import { SettingsForm } from './features/settings/components/SettingsForm'
 import { AgentMonitorSidebar } from './features/workspace/components/AgentMonitorSidebar'
 import { AgentMonitorLayout } from './features/workspace/components/AgentMonitorLayout'
+import { SessionDock } from './features/session/components/SessionDock'
 import { GitReviewPanel } from './features/workspace/components/GitReviewPanel'
 import { useSessionLifecycle } from './features/session/hooks/useSessionLifecycle'
 import { useLayoutPersistence } from './features/session/hooks/useLayoutPersistence'
@@ -32,6 +33,7 @@ import { setWindowMeta } from './features/window/window.service'
 import { useInstalledEditors } from './features/fs/hooks/useInstalledEditors'
 import { openInEditor } from './features/fs/fs.service'
 import { createWorkspace, deleteWorkspace, getUiState, setUiState } from './features/workspace/workspace.service'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { NewWorkspaceModal } from './features/workspace/components/NewWorkspaceModal'
 import { NotificationBell } from './features/notifications/components/NotificationBell'
 import { openNoteInEditor } from './features/notes/notes.service'
@@ -286,7 +288,6 @@ export function App(): JSX.Element {
   const [openInMenuOpen, setOpenInMenuOpen] = useState(false)
   const [activeNoteId, setActiveNoteId] = useState<string | null>(null)
   const [workspaceSessionId, setWorkspaceSessionId] = useState<string | null>('__root__')
-  const wasRestoringRef = useRef(false)
   const restoredWorkspaceRef = useRef(false)
 
   useEffect(() => {
@@ -304,6 +305,11 @@ export function App(): JSX.Element {
   const installedEditors = useInstalledEditors()
 
   const selectedSession = useStore((s) => workspaceSessionId ? s.sessions[workspaceSessionId] : null)
+  // Active session cwd — updated live via OSC 7 shell integration
+  const focusedSessionCwd = useStore((s) => {
+    const id = s.focusedSessionId ?? s.activeSessionId
+    return id ? (s.sessions[id]?.cwd ?? null) : null
+  })
   const gitRoot = selectedSession?.worktreePath ?? workspaceProject
   const gitReview = useGitReview(gitRoot, selectedSession?.worktreeBaseBranch)
   const totalChanges =
@@ -357,12 +363,9 @@ export function App(): JSX.Element {
   }, [patchNoteContent])
 
   useEffect(() => {
-    // During layout restore, don't jump workspaceSessionId — it would show a random
-    // workspace's terminal. After restore completes, skip the first fire so the restored
-    // activeSessionId (last restored tab) doesn't override the home screen.
-    if (isRestoringLayout) { wasRestoringRef.current = true; return }
-    if (wasRestoringRef.current) { wasRestoringRef.current = false; return }
-    setWorkspaceSessionId(storeActiveSessionId ?? '__root__')
+    // During restore don't jump — the layout is still being rebuilt.
+    // Once restore ends (or if there was never a restore), show the active session immediately.
+    if (!isRestoringLayout) setWorkspaceSessionId(storeActiveSessionId ?? '__root__')
   }, [storeActiveSessionId, isRestoringLayout])
 
   // Restore last active workspace once the workspace list loads
@@ -494,7 +497,13 @@ export function App(): JSX.Element {
         {/* Main content */}
         <div className="flex-1 min-w-0 min-h-0 flex">
           {/* Terminal area */}
-          <div className="flex-1 min-w-0 min-h-0 relative">
+          <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+            <SessionDock
+              activeSessionId={workspaceSessionId}
+              onSelectSession={setWorkspaceSessionId}
+            />
+            <div className="flex-1 min-h-0 relative">
+            <ErrorBoundary>
             <AgentMonitorLayout
               sessionId={
                 workspaceSessionId && (sessions[workspaceSessionId] || workspaceSessionId === '__root__')
@@ -503,6 +512,7 @@ export function App(): JSX.Element {
               }
               onSessionClose={() => setWorkspaceSessionId('__root__')}
             />
+            </ErrorBoundary>
 
             {sidePanel !== null && (
               <>
@@ -519,6 +529,7 @@ export function App(): JSX.Element {
               </>
             )}
 
+            </div>
           </div>
         </div>
       </div>
@@ -651,7 +662,7 @@ export function App(): JSX.Element {
       />
       <FileFinderModal
         open={fileFinderOpen}
-        rootPath={workspaceProject ?? ''}
+        rootPath={workspaceProject ?? focusedSessionCwd ?? ''}
         activeTabId={workspaceSessionId ?? '__root__'}
         onClose={() => setFileFinderOpen(false)}
       />

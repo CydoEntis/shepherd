@@ -14,7 +14,7 @@ function workspacesPath(): string {
 }
 
 function makeRootWorkspace(): Workspace {
-  return { id: ROOT_WORKSPACE_ID, name: 'Orbit', rootPath: '', isRoot: true, createdAt: Date.now() }
+  return { id: ROOT_WORKSPACE_ID, name: 'Home', rootPath: app.getPath('home'), isRoot: true, createdAt: Date.now() }
 }
 
 export function getWorkspaces(): Workspace[] {
@@ -31,6 +31,12 @@ export function getWorkspaces(): Workspace[] {
     const workspaces = parsed.data.workspaces
     if (!workspaces.find((w) => w.id === ROOT_WORKSPACE_ID)) {
       workspaces.unshift(makeRootWorkspace())
+      saveWorkspaces(workspaces)
+    }
+    const root = workspaces.find((w) => w.id === ROOT_WORKSPACE_ID)
+    if (root && (root.name === 'Orbit' || !root.rootPath)) {
+      if (root.name === 'Orbit') root.name = 'Home'
+      if (!root.rootPath) root.rootPath = app.getPath('home')
       saveWorkspaces(workspaces)
     }
     return workspaces

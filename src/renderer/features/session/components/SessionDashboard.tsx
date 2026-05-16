@@ -14,6 +14,7 @@ import { useConfirmClose } from '../hooks/useConfirmClose'
 import { useInstalledEditors } from '../../fs/hooks/useInstalledEditors'
 import { showInFolder, openInEditor, openPath } from '../../fs/fs.service'
 import { createSession, patchSession } from '../session.service'
+import { DEFAULT_COLS, DEFAULT_ROWS } from '@shared/constants'
 import { EditSessionModal } from './EditSessionModal'
 import { EditGroupModal } from './EditGroupModal'
 import { toast } from 'sonner'
@@ -785,7 +786,7 @@ export function SessionDashboard({ onFileClick, activeTab, activeFilePath, exter
                   onFileClick={onFileClick}
                   onNewSession={async () => {
                     try {
-                      const meta = await createSession({ name, agentCommand: 'claude', cwd: p, cols: 80, rows: 24 })
+                      const meta = await createSession({ name, cwd: p, cols: DEFAULT_COLS, rows: DEFAULT_ROWS })
                       upsertSession(meta)
                       addTab(meta.sessionId)
                       updateSettings({ projectRoot: p })
