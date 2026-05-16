@@ -38,6 +38,7 @@ export function PaneTreeRenderer({ node, tabId, onContextMenu, forceMainWindow, 
   const focusedLeafId = useStore((s) => s.focusedLeafId)
   const sessions = useStore((s) => s.sessions)
   const rootIsASplit = useStore((s) => s.paneTree[tabId]?.type === 'split')
+  const sessionTabCount = useStore((s) => s.tabOrder.filter((id) => id !== '__root__').length)
 
   const NOTE_COLORS = ['#22c55e', '#3b82f6', '#8b5cf6', '#ec4899', '#ef4444', '#f97316', '#eab308', '#06b6d4', '#14b8a6', '#f59e0b']
   const noteColorFromId = (id: string): string => {
@@ -150,8 +151,8 @@ export function PaneTreeRenderer({ node, tabId, onContextMenu, forceMainWindow, 
         label: 'Edit',
         action: () => { document.dispatchEvent(new CustomEvent('acc:start-rename-session', { detail: { sessionId: sid } })) },
       },
-      {
-        type: 'move-to',
+      ...(sessionTabCount > 1 ? [{
+        type: 'move-to' as const,
         windowId,
         isMainWindow,
         onNewWindow: () => {
@@ -168,7 +169,7 @@ export function PaneTreeRenderer({ node, tabId, onContextMenu, forceMainWindow, 
           rm(sid)
           void moveToWindow(sid, targetWindowId)
         },
-      },
+      }] : []),
       { type: 'separator' },
       {
         label: 'Split Horizontal',

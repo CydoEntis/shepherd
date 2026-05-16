@@ -166,6 +166,8 @@ export function SessionDock({ activeSessionId, onSelectSession }: Props): JSX.El
     setCtxMenu(null)
     detachPane(tabId, tabId)
     removeTab(tabId)
+    const remaining = sessionTabs.filter((id) => id !== tabId)
+    if (remaining[0]) onSelectSession(remaining[0])
     if (windowId) await detachTab(tabId, windowId)
   }
 
@@ -174,6 +176,8 @@ export function SessionDock({ activeSessionId, onSelectSession }: Props): JSX.El
     const actualTabId = findTabForSession(useStore.getState().paneTree, tabId) ?? tabId
     detachPane(actualTabId, tabId)
     removeTab(tabId)
+    const remaining = sessionTabs.filter((id) => id !== tabId)
+    if (remaining[0]) onSelectSession(remaining[0])
     void moveToWindow(tabId, targetWindowId)
   }
 
@@ -294,24 +298,28 @@ export function SessionDock({ activeSessionId, onSelectSession }: Props): JSX.El
               <Pencil size={11} className="flex-shrink-0" />
               Edit
             </button>
-            <div className="my-1 border-t border-brand-panel/60" />
-            <button
-              ref={moveTriggerRef}
-              onMouseEnter={() => {
-                clearHideTimeout()
-                const rect = moveTriggerRef.current?.getBoundingClientRect()
-                if (rect) setSubmenuY(rect.top)
-                setShowMoveSubmenu(true)
-              }}
-              onMouseLeave={scheduleHideSubmenu}
-              className="w-full flex items-center justify-between px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors"
-            >
-              <span className="flex items-center gap-2.5">
-                <ArrowRightLeft size={11} className="flex-shrink-0" />
-                Move to
-              </span>
-              <ChevronRight size={10} className="text-zinc-600" />
-            </button>
+            {sessionTabs.length > 1 && (
+              <>
+                <div className="my-1 border-t border-brand-panel/60" />
+                <button
+                  ref={moveTriggerRef}
+                  onMouseEnter={() => {
+                    clearHideTimeout()
+                    const rect = moveTriggerRef.current?.getBoundingClientRect()
+                    if (rect) setSubmenuY(rect.top)
+                    setShowMoveSubmenu(true)
+                  }}
+                  onMouseLeave={scheduleHideSubmenu}
+                  className="w-full flex items-center justify-between px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors"
+                >
+                  <span className="flex items-center gap-2.5">
+                    <ArrowRightLeft size={11} className="flex-shrink-0" />
+                    Move to
+                  </span>
+                  <ChevronRight size={10} className="text-zinc-600" />
+                </button>
+              </>
+            )}
             <div className="my-1 border-t border-brand-panel/60" />
             <button
               onMouseDown={() => void ctxClose(ctxMenu.tabId)}
