@@ -1,26 +1,12 @@
-# TODO
-
-## Git Integration + Workspace Rework
-
-Make every session workspace-aware and add first-class git account integration.
-
-**Goals:**
-- Users can connect GitHub/GitLab accounts directly in Orbit (OAuth or PAT)
-- Clone a repo into the app from the new session / new orchestrator flow — no terminal bootstrapping required
-- Every session has a workspace tier: git-backed (cloned or existing repo), folder-backed (arbitrary directory), or ephemeral (no cwd, quick tasks)
-- Fix existing git UX issues (worktree stats, branch display, stale git state)
-
-**Why deferred:** Requires reworking the session creation modal, sidebar workspace concept, and adding an auth/credentials store. Scope is significant. Prioritize after core agent features are stable.
-
----
-
-## Detach Notes Pane
-Allow notes panes to be detached into their own window, the same way terminal sessions can be detached.
-Currently only terminal sessions support "Detach to Window" — notes should have the same option from the pane context menu.
-
-## Detached Window Layout
-When a session or note is detached, the window that opens should show only the layout panel — no sidebar.
-- No workspace/session sidebar
-- No notes list
-- Full-width layout with drag-and-drop still functional (can drop sessions/notes into the layout from the main window)
-- Reattach option still available from the pane context menu
+### Things to fix
+- [ ] Command Palette needs full overall, i think it should be ctrl + p to do app commands like opening a fresh terminal, opening settings etc
+- [ ] Ctrl + shift + p should open up the file browser for that directory and you can click open up a file
+- [ ] Files need to able to be opened in the layout and also draged and rearranged etc.
+- [ ] You should be able to create new files and folders in the open directory you are in and save files as w.e file type you want
+- [ ] You should be able to drag and drop files and folders from outside of orbit in the file tree sidebar
+- [ ] We need to have different themes for Monaco
+- [ ] Remove open in from the bottom status bar, instead it should be in the Directory name in the sidebar next to the new file and new folder buttons that need to be added.
+- [ ] Right now you can navigate directories via cd'ing in the terminal or pressing breadcrumbs but i think we should have the ability to open a project directly through the windows wenu.
+- [ ] We need to discuss if workspaces are still a good idea and server a purpose or not.
+- [ ] Figure out where to move the right aligned status bar options, do we move the git icon somewhere else, do we move terminal theme and app theme into settings etc.
+- [ ] Notifications shouldnt fire when ever you leave a shell and u left it idle, it should only work for when AI agents are working and not when you open them for the first time, only after you have done an action within them
