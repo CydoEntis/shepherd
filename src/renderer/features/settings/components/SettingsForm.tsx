@@ -35,13 +35,26 @@ const THEME_SWATCHES: { id: AppSettings['theme']; label: string; bg: string; acc
 ]
 
 const MONACO_THEME_LIST = [
-  { id: 'vs-dark',     label: 'VS Dark' },
-  { id: 'vs',          label: 'VS Light' },
-  { id: 'hc-black',    label: 'High Contrast' },
-  { id: 'github-dark', label: 'GitHub Dark' },
-  { id: 'dracula',     label: 'Dracula' },
-  { id: 'one-dark',    label: 'One Dark' },
-  { id: 'monokai',     label: 'Monokai' },
+  { id: 'vs-dark',            label: 'VS Dark' },
+  { id: 'vs',                 label: 'VS Light' },
+  { id: 'hc-black',           label: 'High Contrast' },
+  { id: 'github-dark',        label: 'GitHub Dark' },
+  { id: 'dracula',            label: 'Dracula' },
+  { id: 'one-dark',           label: 'One Dark' },
+  { id: 'monokai',            label: 'Monokai' },
+  { id: 'monokai-bright',     label: 'Monokai Bright' },
+  { id: 'night-owl',          label: 'Night Owl' },
+  { id: 'oceanic-next',       label: 'Oceanic Next' },
+  { id: 'cobalt2',            label: 'Cobalt 2' },
+  { id: 'blackboard',         label: 'Blackboard' },
+  { id: 'twilight',           label: 'Twilight' },
+  { id: 'vibrant-ink',        label: 'Vibrant Ink' },
+  { id: 'clouds-midnight',    label: 'Cloud Midnight' },
+  { id: 'merbivore-soft',     label: 'Merbivore Soft' },
+  { id: 'upstream-sunburst',  label: 'Upstream Sunburst' },
+  { id: 'pastels-on-dark',    label: 'Pastels on Dark' },
+  { id: 'dawn',               label: 'Dawn' },
+  { id: 'amy',                label: 'Amy' },
 ]
 
 const HOTKEY_FIELDS: { key: keyof AppSettings['hotkeys']; label: string }[] = [

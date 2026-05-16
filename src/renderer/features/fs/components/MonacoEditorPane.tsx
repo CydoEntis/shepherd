@@ -8,6 +8,19 @@ import { useInstalledEditors } from '../hooks/useInstalledEditors'
 import { useStore } from '../../../store/root.store'
 import { cn } from '../../../lib/utils'
 import { toast } from 'sonner'
+import BlackboardTheme from 'monaco-themes/themes/Blackboard.json'
+import AmyTheme from 'monaco-themes/themes/Amy.json'
+import CloudsMidnightTheme from 'monaco-themes/themes/Clouds Midnight.json'
+import Cobalt2Theme from 'monaco-themes/themes/Cobalt2.json'
+import DawnTheme from 'monaco-themes/themes/Dawn.json'
+import MerbivoreSoftTheme from 'monaco-themes/themes/Merbivore Soft.json'
+import MonokaiBrightTheme from 'monaco-themes/themes/Monokai Bright.json'
+import NightOwlTheme from 'monaco-themes/themes/Night Owl.json'
+import OceanicNextTheme from 'monaco-themes/themes/Oceanic Next.json'
+import PastelsOnDarkTheme from 'monaco-themes/themes/Pastels on Dark.json'
+import UpstreamSunburstTheme from 'monaco-themes/themes/Upstream Sunburst.json'
+import TwilightTheme from 'monaco-themes/themes/Twilight.json'
+import VibrantInkTheme from 'monaco-themes/themes/Vibrant Ink.json'
 
 type EditorInstance = Parameters<OnMount>[0]
 type MonacoInstance = Parameters<OnMount>[1]
@@ -27,16 +40,37 @@ function extToLang(filePath: string): string {
 }
 
 const MONACO_THEMES = [
-  { id: 'vs-dark',     label: 'Dark (default)' },
-  { id: 'vs',          label: 'Light' },
-  { id: 'hc-black',    label: 'High Contrast' },
-  { id: 'github-dark', label: 'GitHub Dark' },
-  { id: 'dracula',     label: 'Dracula' },
-  { id: 'one-dark',    label: 'One Dark' },
-  { id: 'monokai',     label: 'Monokai' },
+  { id: 'vs-dark',            label: 'Dark (default)' },
+  { id: 'vs',                 label: 'Light' },
+  { id: 'hc-black',           label: 'High Contrast' },
+  { id: 'github-dark',        label: 'GitHub Dark' },
+  { id: 'dracula',            label: 'Dracula' },
+  { id: 'one-dark',           label: 'One Dark' },
+  { id: 'monokai',            label: 'Monokai' },
+  { id: 'monokai-bright',     label: 'Monokai Bright' },
+  { id: 'night-owl',          label: 'Night Owl' },
+  { id: 'oceanic-next',       label: 'Oceanic Next' },
+  { id: 'cobalt2',            label: 'Cobalt 2' },
+  { id: 'blackboard',         label: 'Blackboard' },
+  { id: 'twilight',           label: 'Twilight' },
+  { id: 'vibrant-ink',        label: 'Vibrant Ink' },
+  { id: 'clouds-midnight',    label: 'Cloud Midnight' },
+  { id: 'merbivore-soft',     label: 'Merbivore Soft' },
+  { id: 'upstream-sunburst',  label: 'Upstream Sunburst' },
+  { id: 'pastels-on-dark',    label: 'Pastels on Dark' },
+  { id: 'dawn',               label: 'Dawn' },
+  { id: 'amy',                label: 'Amy' },
 ] as const
 
 type MonacoThemeId = typeof MONACO_THEMES[number]['id']
+
+type ThemeData = {
+  base: 'vs' | 'vs-dark' | 'hc-black' | 'hc-light'
+  inherit: boolean
+  rules: Array<{ token: string; foreground?: string; background?: string; fontStyle?: string }>
+  colors: Record<string, string>
+  encodedTokensColors?: string[]
+}
 
 function defineCustomThemes(monaco: MonacoInstance): void {
   monaco.editor.defineTheme('github-dark', {
@@ -123,6 +157,19 @@ function defineCustomThemes(monaco: MonacoInstance): void {
       'editorIndentGuide.background': '#3b3a32',
     },
   })
+  monaco.editor.defineTheme('blackboard',        BlackboardTheme as ThemeData)
+  monaco.editor.defineTheme('amy',               AmyTheme as ThemeData)
+  monaco.editor.defineTheme('clouds-midnight',   CloudsMidnightTheme as ThemeData)
+  monaco.editor.defineTheme('cobalt2',           Cobalt2Theme as ThemeData)
+  monaco.editor.defineTheme('dawn',              DawnTheme as ThemeData)
+  monaco.editor.defineTheme('merbivore-soft',    MerbivoreSoftTheme as ThemeData)
+  monaco.editor.defineTheme('monokai-bright',    MonokaiBrightTheme as ThemeData)
+  monaco.editor.defineTheme('night-owl',         NightOwlTheme as ThemeData)
+  monaco.editor.defineTheme('oceanic-next',      OceanicNextTheme as ThemeData)
+  monaco.editor.defineTheme('pastels-on-dark',   PastelsOnDarkTheme as ThemeData)
+  monaco.editor.defineTheme('upstream-sunburst', UpstreamSunburstTheme as ThemeData)
+  monaco.editor.defineTheme('twilight',          TwilightTheme as ThemeData)
+  monaco.editor.defineTheme('vibrant-ink',       VibrantInkTheme as ThemeData)
 }
 
 function CtxSubMenu({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
