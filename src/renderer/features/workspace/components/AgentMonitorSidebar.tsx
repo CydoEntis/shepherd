@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
-import { Plus, ChevronDown, ChevronRight, FolderOpen, FolderTree, X, Users, Terminal, Search, FilePlus2, FolderPlus, ExternalLink } from 'lucide-react'
+import { Plus, ChevronDown, ChevronRight, FolderOpen, FolderTree, X, Users, Terminal, Search, FilePlus2, FolderPlus, ExternalLink, SearchCode } from 'lucide-react'
 import { useStore } from '../../../store/root.store'
 import { patchSession, killSession, createSession } from '../../session/session.service'
 import { DEFAULT_COLS, DEFAULT_ROWS } from '@shared/constants'
@@ -23,6 +23,7 @@ import { SessionCtxMenu } from './SessionCtxMenu'
 import { GroupCtxMenu } from './GroupCtxMenu'
 import { NewGroupModal } from './NewGroupModal'
 import { FileTree } from '../../fs/components/FileTree'
+import { SearchPanel } from './SearchPanel'
 import type { SessionMeta } from '@shared/ipc-types'
 import { ROOT_WORKSPACE_ID } from '@shared/ipc-types'
 
@@ -77,6 +78,7 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
   const [dragOverGroupId, setDragOverGroupId] = useState<string | null | 'ungrouped'>('ungrouped')
   const [isDragOver, setIsDragOver] = useState(false)
   const [openInOpen, setOpenInOpen] = useState(false)
+  const [showSearch, setShowSearch] = useState(false)
   const sidebarBodyRef = useRef<HTMLDivElement>(null)
   const installedEditors = useInstalledEditors()
 
@@ -600,7 +602,7 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
           {/* Folder header */}
           <div className="flex items-center gap-1 px-3 py-1.5 border-b border-brand-panel/40 flex-shrink-0">
             <span className="text-xs text-zinc-400 truncate flex-1 min-w-0 font-medium">
-              {fileTreeRoot ? fileTreeRoot.split('/').filter(Boolean).pop() ?? fileTreeRoot : 'No folder open'}
+              {showSearch ? 'Search' : (fileTreeRoot ? fileTreeRoot.split('/').filter(Boolean).pop() ?? fileTreeRoot : 'No folder open')}
             </span>
             {fileTreeRoot && (
               <>
@@ -647,6 +649,15 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
                 )}
               </>
             )}
+            {fileTreeRoot && (
+              <button
+                onClick={() => setShowSearch((v) => !v)}
+                title={showSearch ? 'Back to files' : 'Search in files'}
+                className={cn('transition-colors flex-shrink-0 p-0.5', showSearch ? 'text-brand-accent' : 'text-zinc-600 hover:text-zinc-300')}
+              >
+                <SearchCode size={12} />
+              </button>
+            )}
             <button
               onClick={() => document.dispatchEvent(new CustomEvent('acc:open-project'))}
               title="Open Folder"
@@ -655,7 +666,15 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
               <FolderOpen size={12} />
             </button>
           </div>
-          {fileTreeRoot ? (
+          {fileTreeRoot && showSearch ? (
+            <SearchPanel
+              projectRoot={fileTreeRoot}
+              onResultClick={(filePath, lineNumber) => {
+                navigateToFile(filePath)
+                setTimeout(() => document.dispatchEvent(new CustomEvent('acc:editor-go-to-line', { detail: { filePath, lineNumber } })), 100)
+              }}
+            />
+          ) : fileTreeRoot ? (
             <>
               <div className="flex-shrink-0 px-2 py-1.5 border-b border-brand-panel/40">
                 <div className="flex items-center gap-1.5 px-2 py-1 bg-brand-panel/40 border border-brand-panel/60 rounded">

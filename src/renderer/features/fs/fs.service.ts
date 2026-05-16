@@ -62,6 +62,12 @@ export async function findFiles(rootPath: string): Promise<string[]> {
   return ipc.invoke(IPC.FS_FIND_FILES, { rootPath }) as Promise<string[]>
 }
 
+export interface SearchResult { filePath: string; lineNumber: number; lineContent: string; matchStart: number; matchEnd: number }
+
+export async function searchInFiles(rootPath: string, query: string, caseSensitive?: boolean): Promise<SearchResult[]> {
+  return ipc.invoke(IPC.FS_SEARCH_IN_FILES, { rootPath, query, caseSensitive }) as Promise<SearchResult[]>
+}
+
 export function openExternal(url: string): Promise<void> {
   return ipc.invoke(IPC.SHELL_OPEN_EXTERNAL, { url }) as Promise<void>
 }

@@ -216,6 +216,21 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
     return () => document.removeEventListener('acc:open-file-in-pane', handler)
   }, [leafId])
 
+  useEffect(() => {
+    const handler = (e: Event): void => {
+      const { filePath: targetPath, lineNumber } = (e as CustomEvent<{ filePath: string; lineNumber: number }>).detail
+      const norm = (p: string): string => p.replace(/\\/g, '/').toLowerCase()
+      if (norm(targetPath) !== norm(currentPath)) return
+      const editor = editorRef.current
+      if (!editor) return
+      editor.revealLineInCenter(lineNumber)
+      editor.setPosition({ lineNumber, column: 1 })
+      editor.focus()
+    }
+    document.addEventListener('acc:editor-go-to-line', handler)
+    return () => document.removeEventListener('acc:editor-go-to-line', handler)
+  }, [currentPath])
+
   const handleSave = async (): Promise<void> => {
     if (content === null || saving) return
     const name = currentPath.replace(/\\/g, '/').split('/').pop() ?? 'file'

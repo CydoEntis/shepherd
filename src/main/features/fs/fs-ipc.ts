@@ -178,6 +178,48 @@ export function registerFsIpc(): void {
     return results
   })
 
+  ipcMain.handle(IPC.FS_SEARCH_IN_FILES, async (_, { rootPath, query, caseSensitive = false }: { rootPath: string; query: string; caseSensitive?: boolean }) => {
+    if (!query.trim()) return []
+    interface SearchResult { filePath: string; lineNumber: number; lineContent: string; matchStart: number; matchEnd: number }
+    const results: SearchResult[] = []
+    const MAX_RESULTS = 500
+    const searchText = caseSensitive ? query : query.toLowerCase()
+    const BINARY_RE = /\.(png|jpg|jpeg|gif|webp|bmp|ico|svg|pdf|zip|tar|gz|7z|exe|dll|bin|so|dylib|wasm|ttf|woff|woff2|eot|mp3|mp4|avi|mov|mkv|db|sqlite)$/i
+    async function walk(dir: string): Promise<void> {
+      if (results.length >= MAX_RESULTS) return
+      let entries: import('fs').Dirent[]
+      try { entries = await fs.readdir(dir, { withFileTypes: true }) } catch { return }
+      const SEARCH_IGNORE = new Set([...IGNORE, '.vscode', 'coverage', '.turbo', 'build'])
+      for (const e of entries) {
+        if (SEARCH_IGNORE.has(e.name)) continue
+        if (results.length >= MAX_RESULTS) return
+        const full = join(dir, e.name)
+        if (e.isDirectory()) { await walk(full) }
+        else {
+          if (BINARY_RE.test(e.name)) continue
+          let content: string
+          try {
+            const stat = await fs.stat(full)
+            if (stat.size > 500_000) continue
+            content = await fs.readFile(full, 'utf-8')
+          } catch { continue }
+          const lines = content.split('\n')
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i]
+            const searchLine = caseSensitive ? line : line.toLowerCase()
+            const idx = searchLine.indexOf(searchText)
+            if (idx !== -1) {
+              results.push({ filePath: full.replace(/\\/g, '/'), lineNumber: i + 1, lineContent: line.slice(0, 300), matchStart: idx, matchEnd: idx + query.length })
+              if (results.length >= MAX_RESULTS) return
+            }
+          }
+        }
+      }
+    }
+    await walk(rootPath)
+    return results
+  })
+
   ipcMain.handle(IPC.FS_GIT_REVIEW, async (_, { projectRoot }: { projectRoot: string }) => {
     interface GitFileInfo { path: string; added: number; deleted: number }
     try {

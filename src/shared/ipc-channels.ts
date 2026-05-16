@@ -82,6 +82,7 @@ export const IPC = {
   FS_RENAME: 'fs:rename',
   FS_TRASH: 'fs:trash',
   FS_FIND_FILES: 'fs:find-files',
+  FS_SEARCH_IN_FILES: 'fs:search-in-files',
 
   // Git review: renderer → main (invoke)
   FS_GIT_REVIEW: 'fs:git-review',

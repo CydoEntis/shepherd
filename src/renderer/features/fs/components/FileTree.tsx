@@ -78,7 +78,7 @@ function getFileIconMeta(name: string): { type: FileIconType; color: string } {
   return { type, color }
 }
 
-function FileIcon({ name }: { name: string }): JSX.Element {
+export function FileIcon({ name }: { name: string }): JSX.Element {
   const { type, color } = getFileIconMeta(name)
   const props = { size: 13, className: color }
   if (type === 'code') return <FileCode {...props} />
