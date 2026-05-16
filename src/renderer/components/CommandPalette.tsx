@@ -1,19 +1,17 @@
 ﻿import { createPortal } from 'react-dom'
-import { Search, Terminal, Zap, Plus, FolderOpen, FolderTree, PanelLeft, X, Maximize2, NotebookPen, FileText } from 'lucide-react'
+import { Search, Terminal, Plus, FolderOpen, FolderTree, NotebookPen, Settings, GitBranch } from 'lucide-react'
 import { useCommandPalette } from '../features/session/hooks/useCommandPalette'
 import { cn } from '../lib/utils'
 
 const ICON_MAP: Record<string, JSX.Element> = {
-  Terminal:   <Terminal size={12} />,
-  Zap:        <Zap size={12} />,
-  Plus:       <Plus size={12} />,
-  FolderOpen: <FolderOpen size={12} />,
-  PanelLeft:  <PanelLeft size={12} />,
-  X:          <X size={12} />,
-  Maximize2:    <Maximize2 size={12} />,
-  NotebookPen:  <NotebookPen size={12} />,
-  FileText:     <FileText size={12} />,
-  FolderTree:   <FolderTree size={12} />,
+  Terminal:    <Terminal size={12} />,
+  Plus:        <Plus size={12} />,
+  FolderOpen:  <FolderOpen size={12} />,
+  FolderTree:  <FolderTree size={12} />,
+  NotebookPen: <NotebookPen size={12} />,
+  Settings:    <Settings size={12} />,
+  GitBranch:   <GitBranch size={12} />,
+  Keyboard:    <span className="text-[10px] font-mono">⌨</span>,
 }
 
 interface Props {
@@ -42,7 +40,7 @@ export function CommandPalette({ open, onClose, onShowShortcuts }: Props): JSX.E
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search sessions, presets, actions…"
+            placeholder="Search commands, sessions…"
             className="bg-transparent text-sm text-zinc-100 placeholder:text-zinc-500 outline-none flex-1"
           />
           <kbd className="text-[10px] text-zinc-600 border border-brand-panel rounded px-1.5 py-0.5">Esc</kbd>
@@ -52,24 +50,33 @@ export function CommandPalette({ open, onClose, onShowShortcuts }: Props): JSX.E
           {items.length === 0 && (
             <p className="text-xs text-zinc-500 text-center py-8">No results</p>
           )}
-          {items.map((item, idx) => (
-            <button
-              key={item.id}
-              onClick={() => item.action()}
-              className={cn(
-                'w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left transition-colors',
-                idx === selectedIdx ? 'bg-brand-accent/20 text-zinc-100' : 'text-zinc-300 hover:bg-brand-panel/60'
-              )}
-            >
-              <span className="text-zinc-400 flex-shrink-0 w-3.5 flex items-center justify-center">
-                {ICON_MAP[item.iconName]}
-              </span>
-              <span className="flex-1 truncate">{item.label}</span>
-              {item.description && (
-                <span className="text-xs text-zinc-500 flex-shrink-0">{item.description}</span>
-              )}
-            </button>
-          ))}
+          {items.map((item, idx) => {
+            const showSection = item.section && (idx === 0 || items[idx - 1].section !== item.section)
+            return (
+              <div key={item.id}>
+                {showSection && (
+                  <div className="px-4 pt-2 pb-1 text-[10px] font-semibold text-zinc-600 uppercase tracking-wider">
+                    {item.section}
+                  </div>
+                )}
+                <button
+                  onClick={() => item.action()}
+                  className={cn(
+                    'w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left transition-colors',
+                    idx === selectedIdx ? 'bg-brand-accent/20 text-zinc-100' : 'text-zinc-300 hover:bg-brand-panel/60'
+                  )}
+                >
+                  <span className="text-zinc-400 flex-shrink-0 w-3.5 flex items-center justify-center">
+                    {ICON_MAP[item.iconName]}
+                  </span>
+                  <span className="flex-1 truncate">{item.label}</span>
+                  {item.description && (
+                    <span className="text-xs text-zinc-500 flex-shrink-0">{item.description}</span>
+                  )}
+                </button>
+              </div>
+            )
+          })}
         </div>
       </div>
     </div>,
