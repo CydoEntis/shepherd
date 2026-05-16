@@ -3,10 +3,11 @@ import { toast } from 'sonner'
 import { ipc } from '../../../lib/ipc'
 import { IPC } from '@shared/ipc-channels'
 import { useStore } from '../../../store/root.store'
-import { listSessions } from '../session.service'
+import { listSessions, createSession } from '../session.service'
 import { getWindowInfo } from '../../window/window.service'
 import { loadLayout } from '../persistence.service'
 import { findTabForSession } from '../../layout/layout-tree'
+import { DEFAULT_COLS, DEFAULT_ROWS } from '@shared/constants'
 import type { PersistedLayout, SessionMeta, SessionExitPayload, WindowInitialSessionsPayload, TabReattachedPayload, NotePanePayload } from '@shared/ipc-types'
 
 export function useSessionLifecycle(): void {
@@ -31,6 +32,36 @@ export function useSessionLifecycle(): void {
   // Tracks running sessions found at startup — 'pending' until listSessions resolves
   const liveSessionsRef = useRef<SessionMeta[] | 'pending'>('pending')
 
+  // Auto-create a plain shell when the user kills the last session.
+  // Only fires when tab count drops from >1 → 1 (startup and restore are excluded
+  // because tabOrder starts at 1 and only grows, so prevLength is never >1 initially).
+  useEffect(() => {
+    let prevTabCount = useStore.getState().tabOrder.length
+    return useStore.subscribe((state) => {
+      const curr = state.tabOrder.length
+      if (
+        curr === 1 &&
+        state.tabOrder[0] === '__root__' &&
+        prevTabCount > 1 &&
+        state.isMainWindow &&
+        !state.isRestoringLayout
+      ) {
+        const { settings } = useStore.getState()
+        const cwd = settings.projectRoot || undefined
+        createSession({
+          name: 'Home',
+          cwd,
+          cols: DEFAULT_COLS,
+          rows: DEFAULT_ROWS,
+        }).then((meta) => {
+          useStore.getState().upsertSession(meta)
+          useStore.getState().addTab(meta.sessionId)
+        }).catch(() => {})
+      }
+      prevTabCount = curr
+    })
+  }, [])
+
   useEffect(() => {
     loadSettings()
     loadWorkspaces()
@@ -49,8 +80,25 @@ export function useSessionLifecycle(): void {
         if (isMainRef.current) live.forEach((m) => addTab(m.sessionId))
         return
       }
-      if (isMainRef.current && layoutRef.current && layoutRef.current.tabs.length > 0) {
+      if (isMainRef.current && layoutRef.current && layoutRef.current.sessions.length > 0) {
         setPendingRestore(layoutRef.current)
+        return
+      }
+      // Nothing to restore → auto-open a plain shell so the user lands in a working state.
+      // No agentCommand here: plain shells get OSC 7 shell integration auto-injected,
+      // so the file tree tracks cd in real time without any manual profile setup.
+      if (isMainRef.current) {
+        const { settings } = useStore.getState()
+        const cwd = settings.projectRoot || undefined
+        createSession({
+          name: 'Home',
+          cwd,
+          cols: DEFAULT_COLS,
+          rows: DEFAULT_ROWS,
+        }).then((meta) => {
+          useStore.getState().upsertSession(meta)
+          useStore.getState().addTab(meta.sessionId)
+        }).catch(() => {})
       }
     }
 
@@ -127,9 +175,10 @@ export function useSessionLifecycle(): void {
 
     const offRemoveSession = ipc.on(IPC.WINDOW_SESSION_REMOVED, (payload) => {
       const { sessionId } = payload as { sessionId: string }
-      const { paneTree, detachPane } = useStore.getState()
+      const { paneTree, detachPane, removeTab } = useStore.getState()
       const tabId = findTabForSession(paneTree, sessionId) ?? sessionId
       detachPane(tabId, sessionId)
+      removeTab(sessionId)
     })
 
     const offHighlight = ipc.on(IPC.WINDOW_HIGHLIGHT, (payload) => {
@@ -195,4 +244,5 @@ export function useSessionLifecycle(): void {
       offRemoveNotePane()
     }
   }, [])
+
 }

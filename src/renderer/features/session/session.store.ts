@@ -65,6 +65,8 @@ export interface SessionSlice {
   addOpenFile: (path: string) => void
   removeOpenFile: (path: string) => void
   removeFileFromAllLayouts: (filePath: string) => void
+
+  updateSessionCwd: (sessionId: string, cwd: string) => void
 }
 
 export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', never]], [], SessionSlice> = (set) => ({
@@ -82,6 +84,13 @@ export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', neve
   upsertSession: (meta) =>
     set((state) => {
       state.sessions[meta.sessionId] = meta
+    }),
+
+  updateSessionCwd: (sessionId, cwd) =>
+    set((state) => {
+      if (state.sessions[sessionId]) {
+        state.sessions[sessionId].cwd = cwd
+      }
     }),
 
   addTab: (sessionId) =>
@@ -148,7 +157,21 @@ export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', neve
           if (state.activeSessionId === tabId) state.activeSessionId = state.tabOrder[0] ?? null
         }
       } else {
-        state.paneTree[tabId] = newTree
+        // If the remaining tree is a single terminal leaf belonging to another session's
+        // own tab, rescue it back to its own pane tree and leave this tab as home.
+        if (
+          newTree.type === 'leaf' &&
+          newTree.panel === 'terminal' &&
+          newTree.sessionId !== tabId &&
+          state.tabOrder.includes(newTree.sessionId)
+        ) {
+          state.paneTree[newTree.sessionId] = makeTerminalLeaf(newTree.sessionId)
+          state.paneTree[tabId] = makeHomeLeaf() as LayoutNode
+          state.activeSessionId = newTree.sessionId
+          state.focusedSessionId = newTree.sessionId
+        } else {
+          state.paneTree[tabId] = newTree
+        }
       }
     }),
 
@@ -375,11 +398,8 @@ export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', neve
               state.focusedSessionId = sessionId
               return
             }
-            if (sourceTabId === '__root__') { state.paneTree['__root__'] = makeHomeLeaf() } else {
-              state.tabOrder = state.tabOrder.filter((id) => id !== sourceTabId)
-              delete state.paneTree[sourceTabId]
-              if (state.activeSessionId === sourceTabId) state.activeSessionId = targetTabId
-            }
+            // Keep the source tab as a home leaf so its dock chip stays visible
+            state.paneTree[sourceTabId] = makeHomeLeaf() as LayoutNode
           } else {
             state.paneTree[sourceTabId] = newSourceTree
           }
@@ -412,11 +432,8 @@ export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', neve
         if (sourceTree) {
           const newSourceTree = removeTerminalLeaf(sourceTree, sessionId)
           if (!newSourceTree) {
-            if (sourceTabId === '__root__') { state.paneTree['__root__'] = makeHomeLeaf() } else {
-              state.tabOrder = state.tabOrder.filter((id) => id !== sourceTabId)
-              delete state.paneTree[sourceTabId]
-              if (state.activeSessionId === sourceTabId) state.activeSessionId = targetTabId
-            }
+            // Keep the source tab as a home leaf so its dock chip stays visible
+            state.paneTree[sourceTabId] = makeHomeLeaf() as LayoutNode
           } else {
             state.paneTree[sourceTabId] = newSourceTree
           }
