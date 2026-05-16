@@ -3,7 +3,7 @@ import { webContents } from 'electron'
 import { IPC } from '@shared/ipc-channels'
 import { SCROLLBACK_BYTE_LIMIT } from '@shared/constants'
 import type { AgentStatus, SessionDataPayload } from '@shared/ipc-types'
-import { getShellIntegrationSequence } from './shell-integration'
+import { getShellIntegrationSequence, getShellIntegrationSpawnArgs } from './shell-integration'
 import type { AgentAdapter, ParseBuffer } from './agent-adapters'
 
 interface PtyOptions {
@@ -92,7 +92,14 @@ export class PtyProcess {
     this.onAgentStatus = opts.onAgentStatus
     this.onConversationId = opts.onConversationId
 
-    this.pty = nodePty.spawn(opts.command, opts.args, {
+    // For PowerShell on Windows, pre-load the shell integration via spawn args
+    // (-NoExit -Command) so the script runs silently before PSReadLine is active.
+    // For all other shells, args are unchanged and integration uses a delayed stdin write.
+    const spawnIntegrationArgs = !opts.skipShellIntegration
+      ? getShellIntegrationSpawnArgs(opts.command, process.platform, opts.args)
+      : null
+
+    this.pty = nodePty.spawn(opts.command, spawnIntegrationArgs ?? opts.args, {
       name: 'xterm-256color',
       cols: opts.cols,
       rows: opts.rows,
@@ -142,9 +149,12 @@ export class PtyProcess {
       }
     })
 
-    const integrationSeq = opts.skipShellIntegration ? null : getShellIntegrationSequence(opts.command, process.platform)
+    // Delayed stdin injection for non-PowerShell shells (bash, zsh, fish).
+    // PowerShell uses spawn args above instead.
+    const integrationSeq = (!opts.skipShellIntegration && !spawnIntegrationArgs)
+      ? getShellIntegrationSequence(opts.command, process.platform)
+      : null
     if (integrationSeq) {
-      // 600ms on Windows: PowerShell/pwsh startup is slower than Unix shells.
       const integrationDelay = process.platform === 'win32' ? 600 : 300
       setTimeout(() => {
         try { this.pty.write(integrationSeq) } catch { /* pty may have exited already */ }

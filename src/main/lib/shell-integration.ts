@@ -1,8 +1,51 @@
 import path from 'path'
 
+// PowerShell integration script — defines the custom prompt and PSConsoleHostReadLine
+// override that emit OSC 633 + OSC 7. Extracted so it can be used both as a delayed
+// stdin write (fallback) and as spawn-time -Command args (preferred, no echo).
+function buildPowerShellIntegrationScript(): string {
+  const ESC = '[char]27'
+  const BEL = '[char]7'
+  const osc = (seq: string): string => `[Console]::Write(${ESC}+"]${seq}"+${BEL});`
+  return (
+    '$Global:__OrbitRL=$function:Global:PSConsoleHostReadLine;' +
+    'function Global:PSConsoleHostReadLine {' +
+    '$l=if($null -ne $Global:__OrbitRL){& $Global:__OrbitRL}else{[Microsoft.PowerShell.PSConsoleReadLine]::ReadLine($host.Runspace,$ExecutionContext)};' +
+    osc('633;C') +
+    '$l' +
+    '};' +
+    'function global:prompt {' +
+    osc('633;D') + osc('633;A') +
+    '$p=$executionContext.SessionState.Path.CurrentLocation.Path;' +
+    "$e=$p.Replace('\\\\','/').Replace('\\','/');" +
+    "if(-not $e.StartsWith('/')){$e=\"/$e\"};" +
+    osc('7;file://localhost$e') +
+    osc('633;B') +
+    '"PS $p> "' +
+    '}'
+  )
+}
+
+/**
+ * For PowerShell/pwsh on Windows: returns spawn args that pre-load the shell
+ * integration script silently (no PSReadLine echo). Pass these as the args array
+ * to pty.spawn() instead of using the delayed stdin write.
+ * Returns null for all other shells — use getShellIntegrationSequence instead.
+ */
+export function getShellIntegrationSpawnArgs(
+  shellPath: string,
+  platform: NodeJS.Platform,
+  existingArgs: string[]
+): string[] | null {
+  if (platform !== 'win32') return null
+  const base = path.basename(shellPath).replace(/\.exe$/i, '').toLowerCase()
+  if (base !== 'powershell' && base !== 'pwsh') return null
+  return ['-NoExit', '-Command', buildPowerShellIntegrationScript(), ...existingArgs]
+}
+
 /**
  * Returns a shell integration init command for the given shell, or null when
- * the shell cannot support it (e.g. CMD).
+ * the shell cannot support it (e.g. CMD, PowerShell — PowerShell uses spawn args).
  *
  * Emits OSC 633 sequences (VS Code shell integration protocol):
  *   633;C → command executing  (on Enter press, before output)
@@ -74,32 +117,10 @@ export function getShellIntegrationSequence(
     }
 
     case 'pwsh':
-    case 'powershell': {
-      // Override PSConsoleHostReadLine — PSReadLine calls this when Enter is pressed.
-      // The override emits 633;C the instant the user submits input.
-      // Override prompt to emit 633;D + 633;A + OSC 7 when the prompt is drawn.
-      // NOTE: `e escape sequence only works in PS 6+. Use [char]27/[char]7 for PS 5.1 compat.
-      const ESC = '[char]27'
-      const BEL = '[char]7'
-      const osc = (seq: string): string => `[Console]::Write(${ESC}+"]${seq}"+${BEL});`
-      const cmd =
-        '$Global:__OrbitRL=$function:Global:PSConsoleHostReadLine;' +
-        'function Global:PSConsoleHostReadLine {' +
-        '$l=if($null -ne $Global:__OrbitRL){& $Global:__OrbitRL}else{[Microsoft.PowerShell.PSConsoleReadLine]::ReadLine($host.Runspace,$ExecutionContext)};' +
-        osc('633;C') +
-        '$l' +
-        '};' +
-        'function global:prompt {' +
-        osc('633;D') + osc('633;A') +
-        '$p=$executionContext.SessionState.Path.CurrentLocation.Path;' +
-        "$e=$p.Replace('\\\\','/').Replace('\\','/');" +
-        "if(-not $e.StartsWith('/')){$e=\"/$e\"};" +
-        osc('7;file://localhost$e') +
-        osc('633;B') +
-        '"PS $p> "' +
-        '}'
-      return cmd + nl
-    }
+    case 'powershell':
+      // PowerShell integration is injected via spawn args (-NoExit -Command) to
+      // avoid PSReadLine echoing the script. See getShellIntegrationSpawnArgs.
+      return null
 
     case 'cmd':
       return null

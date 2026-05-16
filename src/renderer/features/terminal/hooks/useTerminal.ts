@@ -344,6 +344,21 @@ export function useTerminal(sessionId: string, containerRef: React.RefObject<HTM
       terminal.unicode.activeVersion = '11'
       const oscDisposables: { dispose(): void }[] = []
 
+      // OSC 7;file://hostname/path — emitted by shell integration on directory change.
+      // Updates the session's cwd in the store so the file tree can follow the shell.
+      oscDisposables.push(
+        terminal.parser.registerOscHandler(7, (data) => {
+          try {
+            const url = new URL(data)
+            let path = decodeURIComponent(url.pathname).replace(/\\/g, '/')
+            // Windows: /C:/foo → C:/foo
+            if (/^\/[A-Za-z]:\//.test(path)) path = path.slice(1)
+            if (path) useStore.getState().updateSessionCwd(sessionId, path)
+          } catch {}
+          return true
+        })
+      )
+
       // OSC 777;notify;Title;Message — scripts and agents can push toast notifications
       // directly from the terminal without going through IPC. Handled here (renderer)
       // because it's display-only and avoids an extra round-trip through the main process.
@@ -572,6 +587,7 @@ export function useTerminal(sessionId: string, containerRef: React.RefObject<HTM
     // When cols change, xterm reflows cursor-positioned TUI output (Claude Code welcome screen)
     // producing duplicate lines. Clearing the viewport lets the app redraw clean via SIGWINCH.
     const safeRefit = (): void => {
+      if (disposed) return
       const t = terminalRef.current
       if (!t) return
       const prevCols = t.cols
@@ -633,6 +649,8 @@ export function useTerminal(sessionId: string, containerRef: React.RefObject<HTM
         poolEntry?.rendererAddon?.dispose()
         poolEntry?.oscDisposables.forEach((d) => d.dispose())
         searchAddon.dispose()
+        terminalRef.current = null
+        fitAddonRef.current = null
         terminal.dispose()
         unregisterTerminal(sessionId)
       }
