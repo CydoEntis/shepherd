@@ -76,8 +76,14 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
   const [saving, setSaving] = useState(false)
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
   const [monacoThemeOverride, setMonacoThemeOverride] = useState<MonacoThemeId | null>(null)
+  const [pendingClose, setPendingClose] = useState(false)
   const editorRef = useRef<EditorInstance | null>(null)
   const removeLayoutLeaf = useStore((s) => s.removeLayoutLeaf)
+
+  const handleClose = (): void => {
+    if (dirty) { setPendingClose(true); return }
+    removeLayoutLeaf(tabId, leafId)
+  }
   const theme = useStore((s) => s.settings.theme)
   const editors = useInstalledEditors()
   const ctxRef = useRef<HTMLDivElement>(null)
@@ -109,6 +115,7 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
       await writeFile(currentPath, content)
       setDirty(false)
       toast.success(`Saved ${name}`)
+      document.dispatchEvent(new CustomEvent('acc:file-saved', { detail: { path: currentPath } }))
     } catch {
       toast.error(`Failed to save ${name}`)
     } finally {
@@ -260,7 +267,44 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
             )}
           </CtxSubMenu>
           <div className="h-px bg-brand-panel my-1" />
-          <CtxItem label="Close Pane" onClick={() => { removeLayoutLeaf(tabId, leafId); setCtxMenu(null) }} />
+          <CtxItem label="Close Pane" onClick={() => { handleClose(); setCtxMenu(null) }} />
+        </div>,
+        document.body
+      )}
+
+      {pendingClose && createPortal(
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setPendingClose(false) }}
+        >
+          <div className="absolute inset-0 bg-black/50" />
+          <div className="relative bg-brand-surface border border-brand-panel/60 rounded-lg shadow-2xl w-80 p-5 flex flex-col gap-4">
+            <span className="text-sm font-semibold text-zinc-200">Unsaved Changes</span>
+            <p className="text-xs text-zinc-400">
+              <span className="text-zinc-200 font-medium">{currentPath.replace(/\\/g, '/').split('/').pop()}</span>
+              {' '}has unsaved changes. Close without saving?
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setPendingClose(false)}
+                className="px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors rounded border border-brand-panel hover:border-zinc-600"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void handleSave().then(() => removeLayoutLeaf(tabId, leafId))}
+                className="px-3 py-1.5 text-xs bg-brand-accent/20 text-brand-accent border border-brand-accent/30 hover:bg-brand-accent/30 transition-colors rounded"
+              >
+                Save & Close
+              </button>
+              <button
+                onClick={() => removeLayoutLeaf(tabId, leafId)}
+                className="px-3 py-1.5 text-xs bg-red-600/20 text-red-400 border border-red-600/30 hover:bg-red-600/30 hover:text-red-300 transition-colors rounded"
+              >
+                Discard
+              </button>
+            </div>
+          </div>
         </div>,
         document.body
       )}
