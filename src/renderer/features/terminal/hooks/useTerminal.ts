@@ -264,6 +264,7 @@ export function useTerminal(sessionId: string, containerRef: React.RefObject<HTM
   const settings = useStore((s) => s.settings)
   const appTheme = useStore((s) => s.settings.theme)
   const sessionTerminalTheme = useStore((s) => s.terminalThemes[sessionId])
+  const globalTerminalTheme = useStore((s) => s.settings.terminalTheme ?? '')
   const registerTerminal = useStore((s) => s.registerTerminal)
   const unregisterTerminal = useStore((s) => s.unregisterTerminal)
   const setTerminalReady = useStore((s) => s.setTerminalReady)
@@ -684,16 +685,17 @@ export function useTerminal(sessionId: string, containerRef: React.RefObject<HTM
     }
   }, [settings.fontSize, settings.fontFamily])
 
-  // Update terminal theme when app theme or per-session override changes
+  // Update terminal theme: per-session override → global setting → auto from app theme
   useEffect(() => {
     if (terminalRef.current) {
       try {
-        terminalRef.current.options.theme = sessionTerminalTheme
-          ? getThemeById(sessionTerminalTheme, appTheme)
+        const effective = sessionTerminalTheme || globalTerminalTheme
+        terminalRef.current.options.theme = effective
+          ? getThemeById(effective, appTheme)
           : resolveTerminalTheme(appTheme)
       } catch {}
     }
-  }, [appTheme, sessionTerminalTheme])
+  }, [appTheme, sessionTerminalTheme, globalTerminalTheme])
 
   return {
     ctxMenu,

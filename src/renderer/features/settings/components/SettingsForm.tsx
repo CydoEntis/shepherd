@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { FolderOpen, GitBranch } from 'lucide-react'
+import { FolderOpen, GitBranch, ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { AppSettingsSchema, DEFAULT_SETTINGS } from '@shared/ipc-types'
 import type { AppSettings } from '@shared/ipc-types'
@@ -17,20 +17,31 @@ import {
   Select, SelectContent, SelectItem, SelectSeparator,
   SelectTrigger, SelectValue
 } from '../../../components/ui/select'
+import { Popover, PopoverTrigger, PopoverContent } from '../../../components/ui/popover'
 import { useStore } from '../../../store/root.store'
 import { TERMINAL_THEME_LIST } from '../../terminal/hooks/useTerminal'
 import { cn } from '../../../lib/utils'
 
-const THEMES = [
-  { id: 'dark'   as const, label: 'Dark'   },
-  { id: 'light'  as const, label: 'Light'  },
-  { id: 'system' as const, label: 'System' },
-  { id: 'space'  as const, label: 'Space'  },
-  { id: 'nebula' as const, label: 'Nebula' },
-  { id: 'solar'  as const, label: 'Solar'  },
-  { id: 'aurora' as const, label: 'Aurora' },
-  { id: 'mars'   as const, label: 'Mars'   },
-  { id: 'pulsar' as const, label: 'Pulsar' },
+const THEME_SWATCHES: { id: AppSettings['theme']; label: string; bg: string; accent: string }[] = [
+  { id: 'dark',   label: 'Dark',   bg: '#0f1117', accent: '#a1a1aa' },
+  { id: 'light',  label: 'Light',  bg: '#f6f0e4', accent: '#27272a' },
+  { id: 'space',  label: 'Space',  bg: '#0a0719', accent: '#c4a8ff' },
+  { id: 'nebula', label: 'Nebula', bg: '#080514', accent: '#64dcff' },
+  { id: 'solar',  label: 'Solar',  bg: '#0c0804', accent: '#ffb900' },
+  { id: 'aurora', label: 'Aurora', bg: '#040c0e', accent: '#00e6a0' },
+  { id: 'mars',   label: 'Mars',   bg: '#100805', accent: '#ff692d' },
+  { id: 'pulsar', label: 'Pulsar', bg: '#040814', accent: '#00d7ff' },
+  { id: 'system', label: 'System', bg: '#1a1a2e', accent: '#71717a' },
+]
+
+const MONACO_THEME_LIST = [
+  { id: 'vs-dark',     label: 'VS Dark' },
+  { id: 'vs',          label: 'VS Light' },
+  { id: 'hc-black',    label: 'High Contrast' },
+  { id: 'github-dark', label: 'GitHub Dark' },
+  { id: 'dracula',     label: 'Dracula' },
+  { id: 'one-dark',    label: 'One Dark' },
+  { id: 'monokai',     label: 'Monokai' },
 ]
 
 const HOTKEY_FIELDS: { key: keyof AppSettings['hotkeys']; label: string }[] = [
@@ -146,12 +157,9 @@ interface Props {
 export function SettingsForm({ onClose }: Props): JSX.Element {
   const settings = useStore((s) => s.settings)
   const updateSettings = useStore((s) => s.updateSettings)
-  const terminalThemes = useStore((s) => s.terminalThemes)
-  const setTerminalTheme = useStore((s) => s.setTerminalTheme)
-  const activeSessionId = useStore((s) => s.focusedSessionId ?? s.activeSessionId)
-  const activeTerminalTheme = activeSessionId ? (terminalThemes[activeSessionId] ?? '') : ''
   const resetAllSessions = useStore((s) => s.resetAllSessions)
   const [confirmClear, setConfirmClear] = useState(false)
+  const [themePickerOpen, setThemePickerOpen] = useState(false)
 
   const { register, handleSubmit, setValue, watch } = useForm<AppSettings>({
     resolver: zodResolver(AppSettingsSchema),
@@ -227,38 +235,81 @@ export function SettingsForm({ onClose }: Props): JSX.Element {
         <section className="flex flex-col gap-4">
           <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">Appearance</p>
 
+          {/* App Theme — swatch dropdown */}
+          <div className="flex flex-col gap-2">
+            <Label>App Theme</Label>
+            <Popover open={themePickerOpen} onOpenChange={setThemePickerOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="flex items-center gap-2.5 h-9 px-3 rounded-md border border-input bg-background text-sm w-full hover:border-zinc-600 transition-colors"
+                >
+                  {(() => {
+                    const s = THEME_SWATCHES.find((t) => t.id === (settings.theme ?? 'space'))
+                    return s ? (
+                      <>
+                        <span className="w-5 h-3 rounded-sm flex-shrink-0" style={{ background: s.bg, border: `1.5px solid ${s.accent}` }} />
+                        <span className="flex-1 text-left text-zinc-300">{s.label}</span>
+                        <ChevronDown size={13} className="text-zinc-500 flex-shrink-0" />
+                      </>
+                    ) : null
+                  })()}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[300px] p-3" align="start">
+                <div className="grid grid-cols-3 gap-2">
+                  {THEME_SWATCHES.map(({ id, label, bg, accent }) => {
+                    const active = (settings.theme ?? 'space') === id
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => { void updateSettings({ theme: id }); setThemePickerOpen(false) }}
+                        className={cn(
+                          'flex flex-col items-center gap-1 px-3 py-2 rounded-lg border-2 transition-all',
+                          active ? 'scale-105' : 'opacity-60 hover:opacity-90'
+                        )}
+                        style={{ background: bg, borderColor: active ? accent : 'transparent' }}
+                      >
+                        <span className="w-6 h-2 rounded-full" style={{ background: accent }} />
+                        <span className="text-[10px] font-medium" style={{ color: accent }}>{label}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </PopoverContent>
+            </Popover>
+          </div>
+
+          {/* Terminal + Editor theme */}
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
-              <Label>App Theme</Label>
+              <Label>Terminal Theme</Label>
               <Select
-                value={settings.theme ?? 'dark'}
-                onValueChange={(v) => void updateSettings({ theme: v as AppSettings['theme'] })}
+                value={settings.terminalTheme || '__auto__'}
+                onValueChange={(v) => void updateSettings({ terminalTheme: v === '__auto__' ? '' : v })}
               >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Auto (app theme)" /></SelectTrigger>
                 <SelectContent>
-                  {THEMES.map(({ id, label }) => (
+                  <SelectItem value="__auto__">Auto (app theme)</SelectItem>
+                  <SelectSeparator />
+                  {TERMINAL_THEME_LIST.map(({ id, label }) => (
                     <SelectItem key={id} value={id}>{label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-
             <div className="flex flex-col gap-1.5">
-              <Label>Terminal Theme {!activeSessionId && <span className="text-zinc-600 font-normal">(no active session)</span>}</Label>
+              <Label>Editor Theme</Label>
               <Select
-                value={activeTerminalTheme || '__auto__'}
-                onValueChange={(v) => { if (activeSessionId) setTerminalTheme(activeSessionId, v === '__auto__' ? '' : v) }}
-                disabled={!activeSessionId}
+                value={settings.editorTheme || '__auto__'}
+                onValueChange={(v) => void updateSettings({ editorTheme: v === '__auto__' ? '' : v })}
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Auto (app theme)" />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Auto (app theme)" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__auto__">Auto (app theme)</SelectItem>
                   <SelectSeparator />
-                  {TERMINAL_THEME_LIST.map(({ id, label }) => (
+                  {MONACO_THEME_LIST.map(({ id, label }) => (
                     <SelectItem key={id} value={id}>{label}</SelectItem>
                   ))}
                 </SelectContent>

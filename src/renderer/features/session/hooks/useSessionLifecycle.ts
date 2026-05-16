@@ -97,7 +97,7 @@ export function useSessionLifecycle(): void {
       const { sessions, paneTree, activeSessionId } = useStore.getState()
       const prev = sessions[meta.sessionId]
 
-      if (prev?.agentStatus === 'running' && meta.agentStatus === 'waiting-input') {
+      if (prev?.agentStatus === 'running' && meta.agentStatus === 'waiting-input' && meta.agentCommand) {
         const tabId = findTabForSession(paneTree, meta.sessionId)
         if (tabId) {
           useStore.getState().addNotification({ type: 'agent-done', title: `${meta.name} is awaiting input`, tabId })

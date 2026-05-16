@@ -369,7 +369,7 @@ export function App(): JSX.Element {
         />
 
         {/* Main content */}
-        <div className="flex-1 min-w-0 min-h-0 flex">
+        <div className="flex-1 min-w-0 min-h-0 flex relative">
           {/* Terminal area */}
           <div className="flex-1 min-w-0 min-h-0 flex flex-col">
             <SessionDock
@@ -387,24 +387,23 @@ export function App(): JSX.Element {
               onSessionClose={() => setWorkspaceSessionId('__root__')}
             />
             </ErrorBoundary>
-
-            {sidePanel !== null && (
-              <>
-                <div className="absolute inset-0 z-10" onClick={() => setSidePanel(null)} />
-                <div
-                  className={cn(
-                    'absolute right-0 top-0 h-full z-20 border-l border-brand-panel bg-brand-surface flex flex-col shadow-2xl',
-                    sidePanel === 'settings' ? 'w-[520px]' : 'w-[420px]'
-                  )}
-                >
-                  {sidePanel === 'settings' && <SettingsForm onClose={() => setSidePanel(null)} />}
-                  {sidePanel === 'git' && <GitReviewPanel projectRoot={gitRoot} gitReview={gitReview} />}
-                </div>
-              </>
-            )}
-
             </div>
           </div>
+
+          {sidePanel !== null && (
+            <>
+              <div className="absolute inset-0 z-10" onClick={() => setSidePanel(null)} />
+              <div
+                className={cn(
+                  'absolute right-0 top-0 h-full z-20 border-l border-brand-panel bg-brand-surface flex flex-col shadow-2xl',
+                  sidePanel === 'settings' ? 'w-[520px]' : 'w-[420px]'
+                )}
+              >
+                {sidePanel === 'settings' && <SettingsForm onClose={() => setSidePanel(null)} />}
+                {sidePanel === 'git' && <GitReviewPanel projectRoot={gitRoot} gitReview={gitReview} />}
+              </div>
+            </>
+          )}
         </div>
       </div>
       </LayoutDndProvider>

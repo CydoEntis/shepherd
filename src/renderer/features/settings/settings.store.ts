@@ -25,13 +25,18 @@ export interface SettingsSlice {
   setNoteWorkspace: (noteId: string, workspaceId: string | null) => Promise<void>
 }
 
+const VALID_THEMES = new Set(['system', 'light', 'dark', 'space', 'nebula', 'solar', 'aurora', 'mars', 'pulsar'])
+const storedTheme = localStorage.getItem('orbit-theme')
+const initialTheme = (storedTheme && VALID_THEMES.has(storedTheme) ? storedTheme : null) as AppSettings['theme'] | null
+
 export const createSettingsSlice: StateCreator<RootStore, [['zustand/immer', never]], [], SettingsSlice> = (set, get) => ({
-  settings: DEFAULT_SETTINGS,
+  settings: initialTheme ? { ...DEFAULT_SETTINGS, theme: initialTheme } : DEFAULT_SETTINGS,
   settingsLoaded: false,
   notes: [],
 
   loadSettings: async () => {
     const settings = await getSettings()
+    if (settings.theme) localStorage.setItem('orbit-theme', settings.theme)
     set((state) => {
       state.settings = settings
       state.settingsLoaded = true
@@ -42,6 +47,7 @@ export const createSettingsSlice: StateCreator<RootStore, [['zustand/immer', nev
 
   updateSettings: async (patch) => {
     const updated = await setSettings(patch)
+    if (updated.theme) localStorage.setItem('orbit-theme', updated.theme)
     set((state) => {
       state.settings = updated
     })

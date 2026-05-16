@@ -2,8 +2,9 @@ import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { X, Plus, GripVertical, Pencil, ChevronRight, ArrowRightLeft } from 'lucide-react'
 import { useStore } from '../../../store/root.store'
-import { killSession } from '../session.service'
+import { killSession, patchSession } from '../session.service'
 import { detachTab, listWindows, moveToWindow } from '../../window/window.service'
+import { EditSessionModal } from './EditSessionModal'
 import { cn, normalizePath } from '../../../lib/utils'
 import { ROOT_WORKSPACE_ID } from '@shared/ipc-types'
 import { useLayoutDnd } from '../../layout/dnd/LayoutDndContext'
@@ -36,8 +37,7 @@ export function SessionDock({ activeSessionId, onSelectSession }: Props): JSX.El
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null)
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editName, setEditName] = useState('')
+  const [editSessionId, setEditSessionId] = useState<string | null>(null)
   const [otherWindows, setOtherWindows] = useState<{ windowId: string; windowName: string; windowColor: string }[]>([])
   const [showMoveSubmenu, setShowMoveSubmenu] = useState(false)
   const [submenuY, setSubmenuY] = useState(0)
@@ -50,7 +50,7 @@ export function SessionDock({ activeSessionId, onSelectSession }: Props): JSX.El
   useEffect(() => {
     const handler = (e: Event): void => {
       const { sessionId } = (e as CustomEvent<{ sessionId: string }>).detail
-      startEdit(sessionId)
+      if (sessions[sessionId]) setEditSessionId(sessionId)
     }
     document.addEventListener('acc:start-rename-session', handler)
     return () => document.removeEventListener('acc:start-rename-session', handler)
@@ -149,19 +149,16 @@ export function SessionDock({ activeSessionId, onSelectSession }: Props): JSX.El
     setCtxMenu({ tabId, pos: { x: e.clientX, y: e.clientY } })
   }
 
-  const startEdit = (tabId: string): void => {
+  const openEdit = (tabId: string): void => {
     setCtxMenu(null)
-    const session = sessions[tabId]
-    if (!session) return
-    setEditingId(tabId)
-    setEditName(session.name)
+    if (sessions[tabId]) setEditSessionId(tabId)
   }
 
-  const commitEdit = (tabId: string): void => {
-    const session = sessions[tabId]
-    if (session && editName.trim()) upsertSession({ ...session, name: editName.trim() })
-    setEditingId(null)
-    setEditName('')
+  const handleEditSave = async (name: string, color: string): Promise<void> => {
+    if (!editSessionId) return
+    setEditSessionId(null)
+    const updated = await patchSession({ sessionId: editSessionId, name, color })
+    upsertSession(updated)
   }
 
   const ctxNewWindow = async (tabId: string): Promise<void> => {
@@ -204,7 +201,6 @@ export function SessionDock({ activeSessionId, onSelectSession }: Props): JSX.El
         const isActive = (focusedSessionId ?? activeSessionId) === tabId
         const isDragging = draggingId === tabId
         const isOver = dragOverId === tabId && draggingId !== tabId
-        const isEditing = editingId === tabId
         const color = meta.color ?? '#6366f1'
 
         return (
@@ -216,13 +212,12 @@ export function SessionDock({ activeSessionId, onSelectSession }: Props): JSX.El
             onDrop={() => handleDrop(tabId)}
             onDragEnd={cleanup}
             onClick={() => {
-              if (isEditing) return
               const { paneTree, setFocusedSession } = useStore.getState()
               const actualTabId = findTabForSession(paneTree, tabId) ?? tabId
               onSelectSession(actualTabId)
               setFocusedSession(tabId)
             }}
-            onDoubleClick={(e) => { e.stopPropagation(); startEdit(tabId) }}
+            onDoubleClick={(e) => { e.stopPropagation(); openEdit(tabId) }}
             onContextMenu={(e) => openCtxMenu(e, tabId)}
             className={cn(
               'group flex items-center gap-1.5 px-2.5 py-1 rounded-md border shadow-sm cursor-pointer transition-all flex-shrink-0 select-none',
@@ -244,23 +239,7 @@ export function SessionDock({ activeSessionId, onSelectSession }: Props): JSX.El
               style={{ backgroundColor: isActive ? color : `${color}99` }}
             />
 
-            {isEditing ? (
-              <input
-                autoFocus
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                onBlur={() => commitEdit(tabId)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') commitEdit(tabId)
-                  if (e.key === 'Escape') { setEditingId(null); setEditName('') }
-                  e.stopPropagation()
-                }}
-                onClick={(e) => e.stopPropagation()}
-                className="text-xs font-medium bg-transparent outline-none border-b border-zinc-500 max-w-[120px] min-w-[60px]"
-              />
-            ) : (
-              <span className="text-xs font-medium truncate max-w-[120px]">{meta.name}</span>
-            )}
+            <span className="text-xs font-medium truncate max-w-[120px]">{meta.name}</span>
 
             {meta.agentStatus === 'running' && (
               <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse flex-shrink-0" />
@@ -287,6 +266,14 @@ export function SessionDock({ activeSessionId, onSelectSession }: Props): JSX.El
         <span>Terminal</span>
       </button>
 
+      {editSessionId && sessions[editSessionId] && (
+        <EditSessionModal
+          meta={sessions[editSessionId]}
+          onSave={(name, color) => void handleEditSave(name, color)}
+          onDismiss={() => setEditSessionId(null)}
+        />
+      )}
+
       {ctxMenu && createPortal(
         <>
           <div className="fixed inset-0 z-[9998]" onMouseDown={() => setCtxMenu(null)} />
@@ -296,7 +283,7 @@ export function SessionDock({ activeSessionId, onSelectSession }: Props): JSX.El
             style={{ left: ctxMenu.pos.x, top: ctxMenu.pos.y }}
           >
             <button
-              onMouseDown={() => startEdit(ctxMenu.tabId)}
+              onMouseDown={() => openEdit(ctxMenu.tabId)}
               className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors"
             >
               <Pencil size={11} className="flex-shrink-0" />

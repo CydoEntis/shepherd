@@ -196,7 +196,18 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
   const editors = useInstalledEditors()
   const ctxRef = useRef<HTMLDivElement>(null)
 
-  const autoTheme: MonacoThemeId = theme === 'light' ? 'vs' : 'vs-dark'
+  const autoTheme: MonacoThemeId = ((): MonacoThemeId => {
+    switch (theme) {
+      case 'light':  return 'vs'
+      case 'space':  return 'dracula'
+      case 'nebula': return 'one-dark'
+      case 'solar':  return 'monokai'
+      case 'aurora': return 'github-dark'
+      case 'mars':   return 'monokai'
+      case 'pulsar': return 'one-dark'
+      default:       return 'vs-dark'
+    }
+  })()
   const monacoThemeOverride: MonacoThemeId | null = (MONACO_THEMES.find((t) => t.id === editorThemeSetting)?.id ?? null)
   const monacoTheme = monacoThemeOverride ?? autoTheme
 
