@@ -370,6 +370,16 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
             onMount={(editor, monaco) => {
               editorRef.current = editor
               defineCustomThemes(monaco)
+              // Disable semantic validation — Monaco has no tsconfig/node_modules context
+              // so module-not-found and type errors are always false positives here
+              monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
+                noSemanticValidation: true,
+                noSyntaxValidation: false,
+              })
+              monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
+                noSemanticValidation: true,
+                noSyntaxValidation: false,
+              })
               editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => void handleSaveRef.current())
               editor.updateOptions({ contextmenu: false })
               editor.getDomNode()?.addEventListener('contextmenu', (e) => {
