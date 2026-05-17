@@ -19,7 +19,6 @@ import {
 } from '../../../components/ui/select'
 import { Popover, PopoverTrigger, PopoverContent } from '../../../components/ui/popover'
 import { useStore } from '../../../store/root.store'
-import { TERMINAL_THEME_LIST } from '../../terminal/hooks/useTerminal'
 import { cn } from '../../../lib/utils'
 
 const THEME_SWATCHES: { id: AppSettings['theme']; label: string; bg: string; accent: string }[] = [
@@ -32,31 +31,6 @@ const THEME_SWATCHES: { id: AppSettings['theme']; label: string; bg: string; acc
   { id: 'mars',   label: 'Mars',   bg: '#100805', accent: '#ff692d' },
   { id: 'pulsar', label: 'Pulsar', bg: '#040814', accent: '#00d7ff' },
   { id: 'system', label: 'System', bg: '#1a1a2e', accent: '#71717a' },
-]
-
-const MONACO_THEME_LIST = [
-  { id: 'vs-dark',            label: 'VS Dark' },
-  { id: 'vs',                 label: 'VS Light' },
-  { id: 'hc-black',           label: 'High Contrast' },
-  { id: 'github-dark',        label: 'GitHub Dark' },
-  { id: 'dracula',            label: 'Dracula' },
-  { id: 'one-dark',           label: 'One Dark' },
-  { id: 'monokai',            label: 'Monokai' },
-  { id: 'monokai-bright',     label: 'Monokai Bright' },
-  { id: 'night-owl',          label: 'Night Owl' },
-  { id: 'oceanic-next',       label: 'Oceanic Next' },
-  { id: 'cobalt2',            label: 'Cobalt 2' },
-  { id: 'blackboard',         label: 'Blackboard' },
-  { id: 'twilight',           label: 'Twilight' },
-  { id: 'vibrant-ink',        label: 'Vibrant Ink' },
-  { id: 'clouds-midnight',    label: 'Cloud Midnight' },
-  { id: 'merbivore-soft',     label: 'Merbivore Soft' },
-  { id: 'upstream-sunburst',  label: 'Upstream Sunburst' },
-  { id: 'pastels-on-dark',    label: 'Pastels on Dark' },
-  { id: 'dawn',               label: 'Dawn' },
-  { id: 'amy',                label: 'Amy' },
-  { id: 'birds-of-paradise',  label: 'Birds of Paradise' },
-  { id: 'solarized-light',    label: 'Solarized Light' },
 ]
 
 const HOTKEY_FIELDS: { key: keyof AppSettings['hotkeys']; label: string }[] = [
@@ -296,42 +270,6 @@ export function SettingsForm({ onClose }: Props): JSX.Element {
                 </div>
               </PopoverContent>
             </Popover>
-          </div>
-
-          {/* Terminal + Editor theme */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex flex-col gap-1.5">
-              <Label>Terminal Theme</Label>
-              <Select
-                value={settings.terminalTheme || '__auto__'}
-                onValueChange={(v) => void updateSettings({ terminalTheme: v === '__auto__' ? '' : v })}
-              >
-                <SelectTrigger><SelectValue placeholder="Auto (app theme)" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__auto__">Auto (app theme)</SelectItem>
-                  <SelectSeparator />
-                  {TERMINAL_THEME_LIST.map(({ id, label }) => (
-                    <SelectItem key={id} value={id}>{label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>Editor Theme</Label>
-              <Select
-                value={settings.editorTheme || '__auto__'}
-                onValueChange={(v) => void updateSettings({ editorTheme: v === '__auto__' ? '' : v })}
-              >
-                <SelectTrigger><SelectValue placeholder="Auto (app theme)" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__auto__">Auto (app theme)</SelectItem>
-                  <SelectSeparator />
-                  {MONACO_THEME_LIST.map(({ id, label }) => (
-                    <SelectItem key={id} value={id}>{label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
           </div>
 
           <div className="grid grid-cols-3 gap-4">

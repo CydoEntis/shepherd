@@ -260,7 +260,6 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
   }
   const theme = useStore((s) => s.settings.theme)
   const editorFontSize = useStore((s) => s.settings.editorFontSize ?? 13)
-  const editorThemeSetting = useStore((s) => s.settings.editorTheme ?? '')
   const editors = useInstalledEditors()
   const ctxRef = useRef<HTMLDivElement>(null)
 
@@ -277,20 +276,15 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
       default:       return 'vs-dark'
     }
   })()
-  const monacoThemeOverride: MonacoThemeId | null = (MONACO_THEMES.find((t) => t.id === editorThemeSetting)?.id ?? null)
-  // In auto mode we use 'orbit-auto' — a theme that takes the auto-selected syntax colors
-  // but replaces the background with the current app theme's background color
-  const monacoTheme = monacoThemeOverride ?? 'orbit-auto'
-
-  // Rebuild 'orbit-auto' whenever the app theme or auto-selected editor theme changes
+  // Rebuild 'orbit-auto' whenever the app theme changes
   useEffect(() => {
     const monaco = monacoRef.current
-    if (!monaco || monacoThemeOverride) return
+    if (!monaco) return
     const adapted = buildAdaptedTheme(autoTheme, theme ?? 'space')
     if (!adapted) return
     monaco.editor.defineTheme('orbit-auto', adapted)
     monaco.editor.setTheme('orbit-auto')
-  }, [theme, autoTheme, monacoThemeOverride])
+  }, [theme, autoTheme])
 
   useEffect(() => {
     setContent(null)
@@ -396,16 +390,14 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
             key={currentPath}
             value={content}
             language={extToLang(currentPath)}
-            theme={monacoTheme}
+            theme="orbit-auto"
             onMount={(editor, monaco) => {
               editorRef.current = editor
               monacoRef.current = monaco
               defineCustomThemes(monaco)
-              // Build the initial adapted theme before anything renders
-              if (!monacoThemeOverride) {
-                const adapted = buildAdaptedTheme(autoTheme, theme ?? 'space')
-                if (adapted) monaco.editor.defineTheme('orbit-auto', adapted)
-              }
+              // Build orbit-auto immediately so it's ready when the editor first renders
+              const adapted = buildAdaptedTheme(autoTheme, theme ?? 'space')
+              if (adapted) monaco.editor.defineTheme('orbit-auto', adapted)
               // Disable semantic validation — Monaco has no tsconfig/node_modules context
               // so module-not-found and type errors are always false positives here
               monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
@@ -471,34 +463,6 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
               ))}
             </CtxSubMenu>
           )}
-          <CtxSubMenu label="Editor Theme">
-            {MONACO_THEMES.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => { void updateSettings({ editorTheme: t.id }); setCtxMenu(null) }}
-                className={cn(
-                  'w-full flex items-center px-3 py-1.5 text-xs transition-colors text-left',
-                  monacoTheme === t.id ? 'text-zinc-100 bg-brand-panel/60' : 'text-zinc-300 hover:bg-brand-panel hover:text-zinc-100'
-                )}
-              >
-                {t.label}
-                {monacoThemeOverride === null && t.id === autoTheme && (
-                  <span className="ml-1 text-[10px] text-zinc-600">(auto)</span>
-                )}
-              </button>
-            ))}
-            {monacoThemeOverride !== null && (
-              <>
-                <div className="h-px bg-brand-panel my-1" />
-                <button
-                  onClick={() => { void updateSettings({ editorTheme: '' }); setCtxMenu(null) }}
-                  className="w-full flex items-center px-3 py-1.5 text-xs text-zinc-500 hover:bg-brand-panel hover:text-zinc-300 transition-colors text-left"
-                >
-                  Reset to auto
-                </button>
-              </>
-            )}
-          </CtxSubMenu>
           <div className="h-px bg-brand-panel my-1" />
           <CtxItem label="Close Pane" onClick={() => { handleClose(); setCtxMenu(null) }} />
         </div>,

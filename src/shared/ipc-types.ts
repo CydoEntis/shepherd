@@ -252,8 +252,6 @@ export const AppSettingsSchema = z.object({
   defaultSessionDir: z.string().default(''),
   dismissedReleaseVersion: z.string().default(''),
   sandboxYoloMode: z.boolean().default(true),
-  editorTheme: z.string().default(''),
-  terminalTheme: z.string().default(''),
 })
 
 export const NoteSchema = z.object({ id: z.string(), content: z.string().default(''), updatedAt: z.number().default(0) })
