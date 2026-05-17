@@ -18,6 +18,7 @@ import {
   SelectTrigger, SelectValue
 } from '../../../components/ui/select'
 import { Popover, PopoverTrigger, PopoverContent } from '../../../components/ui/popover'
+import { Panel } from '../../../components/ui/panel'
 import { useStore } from '../../../store/root.store'
 import { cn } from '../../../lib/utils'
 
@@ -30,6 +31,8 @@ const THEME_SWATCHES: { id: AppSettings['theme']; label: string; bg: string; acc
   { id: 'aurora', label: 'Aurora', bg: '#040c0e', accent: '#00e6a0' },
   { id: 'mars',   label: 'Mars',   bg: '#100805', accent: '#ff692d' },
   { id: 'pulsar', label: 'Pulsar', bg: '#040814', accent: '#00d7ff' },
+  { id: 'cosmos', label: 'Cosmos', bg: '#200020', accent: '#c89bff' },
+  { id: 'void',   label: 'Void',   bg: '#000000', accent: '#c8c8c8' },
   { id: 'system', label: 'System', bg: '#1a1a2e', accent: '#71717a' },
 ]
 
@@ -76,7 +79,7 @@ function HotkeyInput({ value, onChange }: HotkeyInputProps): JSX.Element {
       onBlur={() => setCapturing(false)}
       onKeyDown={capturing ? handleKeyDown : undefined}
       className={cn(
-        'flex items-center h-9 px-3 rounded border text-xs font-mono cursor-pointer select-none transition-colors outline-none flex-1',
+        'flex items-center h-9 px-3 rounded-lg border text-xs font-mono cursor-pointer select-none transition-colors outline-none flex-1',
         capturing
           ? 'border-brand-accent/60 bg-brand-accent/5 text-brand-accent'
           : 'border-brand-panel bg-brand-surface text-zinc-300 hover:border-zinc-600'
@@ -219,9 +222,9 @@ export function SettingsForm({ onClose }: Props): JSX.Element {
     <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col flex-1 min-h-0">
 
       {/* Scrollable content */}
-      <div className="flex-1 overflow-y-auto pl-10 pr-16 py-8 flex flex-col gap-6">
+      <div className="flex-1 overflow-y-auto px-5 py-5 flex flex-col gap-4">
 
-        <section className="flex flex-col gap-4">
+        <Panel variant="inset" className="flex flex-col gap-4 p-5">
           <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">Appearance</p>
 
           {/* App Theme — swatch dropdown */}
@@ -231,7 +234,7 @@ export function SettingsForm({ onClose }: Props): JSX.Element {
               <PopoverTrigger asChild>
                 <button
                   type="button"
-                  className="flex h-9 w-full items-center justify-between rounded border border-brand-panel bg-brand-surface px-3 py-2 text-sm text-zinc-200 outline-none transition-colors hover:border-zinc-600"
+                  className="flex h-9 w-full items-center justify-between rounded-lg border border-brand-panel bg-brand-surface px-3 py-2 text-sm text-zinc-200 outline-none transition-colors hover:border-zinc-600"
                 >
                   {(() => {
                     const s = THEME_SWATCHES.find((t) => t.id === (settings.theme ?? 'space'))
@@ -301,11 +304,9 @@ export function SettingsForm({ onClose }: Props): JSX.Element {
               Review
             </button>
           </div>
-        </section>
+        </Panel>
 
-        <div className="h-px bg-border" />
-
-        <section className="flex flex-col gap-4">
+        <Panel variant="inset" className="flex flex-col gap-4 p-5">
           <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">Terminal</p>
 
           <div className="flex flex-col gap-1.5">
@@ -331,16 +332,14 @@ export function SettingsForm({ onClose }: Props): JSX.Element {
                 placeholder="Home directory"
                 className="flex-1 text-xs text-zinc-400 cursor-default"
               />
-              <Button type="button" variant="outline" size="icon" onClick={pickShellStartDir} title="Browse" className="flex-shrink-0 h-9 w-9">
+              <Button type="button" variant="orbit" size="icon" onClick={pickShellStartDir} title="Browse" className="flex-shrink-0 h-9 w-9">
                 <FolderOpen size={14} />
               </Button>
             </div>
           </div>
-        </section>
+        </Panel>
 
-        <div className="h-px bg-border" />
-
-        <section className="flex flex-col gap-3">
+        <Panel variant="inset" className="flex flex-col gap-3 p-5">
           <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">Hotkeys</p>
           <div className="grid grid-cols-1 gap-2.5">
             {HOTKEY_FIELDS.map(({ key, label }) => (
@@ -353,11 +352,9 @@ export function SettingsForm({ onClose }: Props): JSX.Element {
               </div>
             ))}
           </div>
-        </section>
+        </Panel>
 
-        <div className="h-px bg-border" />
-
-        <section className="flex flex-col gap-3">
+        <Panel variant="inset" className="flex flex-col gap-3 p-5">
           <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">Storage</p>
 
           <div className="flex flex-col gap-1.5">
@@ -365,7 +362,7 @@ export function SettingsForm({ onClose }: Props): JSX.Element {
             <p className="text-[11px] text-zinc-600 -mt-1">Where Orbit stores notes, worktrees, and session layout. Defaults to ~/Orbit/.orbit</p>
             <div className="flex gap-2">
               <Input readOnly value={dataDirectory} placeholder="~/Orbit/.orbit" className="flex-1 text-xs text-zinc-400 cursor-default" />
-              <Button type="button" variant="outline" size="icon" onClick={pickDataDir} title="Browse" className="flex-shrink-0 h-9 w-9">
+              <Button type="button" variant="orbit" size="icon" onClick={pickDataDir} title="Browse" className="flex-shrink-0 h-9 w-9">
                 <FolderOpen size={14} />
               </Button>
             </div>
@@ -375,7 +372,7 @@ export function SettingsForm({ onClose }: Props): JSX.Element {
             <Label>Notes directory <span className="text-zinc-600 font-normal">(override)</span></Label>
             <div className="flex gap-2">
               <Input readOnly value={notesDirectory} placeholder="~/Orbit/.orbit/notes" className="flex-1 text-xs text-zinc-400 cursor-default" />
-              <Button type="button" variant="outline" size="icon" onClick={pickNotesDir} title="Browse" className="flex-shrink-0 h-9 w-9">
+              <Button type="button" variant="orbit" size="icon" onClick={pickNotesDir} title="Browse" className="flex-shrink-0 h-9 w-9">
                 <FolderOpen size={14} />
               </Button>
             </div>
@@ -385,16 +382,14 @@ export function SettingsForm({ onClose }: Props): JSX.Element {
             <Label>Worktrees directory <span className="text-zinc-600 font-normal">(override)</span></Label>
             <div className="flex gap-2">
               <Input readOnly value={worktreesDirectory} placeholder="~/Orbit/.orbit/worktrees" className="flex-1 text-xs text-zinc-400 cursor-default" />
-              <Button type="button" variant="outline" size="icon" onClick={pickWorktreesDir} title="Browse" className="flex-shrink-0 h-9 w-9">
+              <Button type="button" variant="orbit" size="icon" onClick={pickWorktreesDir} title="Browse" className="flex-shrink-0 h-9 w-9">
                 <FolderOpen size={14} />
               </Button>
             </div>
           </div>
-        </section>
+        </Panel>
 
-        <div className="h-px bg-border" />
-
-        <section className="flex flex-col gap-3">
+        <Panel variant="inset" className="flex flex-col gap-3 p-5">
           <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">Sessions</p>
           <div className="flex flex-col gap-1.5">
             <Label>Default session directory</Label>
@@ -405,7 +400,7 @@ export function SettingsForm({ onClose }: Props): JSX.Element {
                 placeholder="~/Orbit"
                 className="flex-1 text-xs text-zinc-400 cursor-default"
               />
-              <Button type="button" variant="outline" size="icon" onClick={pickSessionDir} title="Browse" className="flex-shrink-0 h-9 w-9">
+              <Button type="button" variant="orbit" size="icon" onClick={pickSessionDir} title="Browse" className="flex-shrink-0 h-9 w-9">
                 <FolderOpen size={14} />
               </Button>
             </div>
@@ -446,11 +441,9 @@ export function SettingsForm({ onClose }: Props): JSX.Element {
               onCheckedChange={(v) => setValue('sandboxYoloMode', v === true)}
             />
           </div>
-        </section>
+        </Panel>
 
-        <div className="h-px bg-border" />
-
-        <section className="flex flex-col gap-3">
+        <Panel variant="inset" className="flex flex-col gap-3 p-5 border-red-900/30">
           <p className="text-[10px] font-semibold text-red-500/60 uppercase tracking-wider">Danger Zone</p>
           <div className="flex items-center justify-between">
             <div className="flex flex-col gap-0.5">
@@ -484,14 +477,14 @@ export function SettingsForm({ onClose }: Props): JSX.Element {
               </button>
             )}
           </div>
-        </section>
+        </Panel>
 
       </div>
 
       {/* Sticky footer */}
-      <div className="flex justify-end gap-2 pl-10 pr-16 py-4 border-t border-border flex-shrink-0 bg-brand-bg">
-        <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button type="submit" className="bg-brand-accent/20 text-brand-accent hover:bg-brand-accent/30">Save</Button>
+      <div className="flex justify-end gap-2 px-5 py-4 border-t border-brand-panel/40 flex-shrink-0 bg-brand-bg">
+        <Button type="button" variant="orbit" onClick={onClose}>Cancel</Button>
+        <Button type="submit" className="rounded-lg border border-brand-accent/30 bg-brand-accent/15 text-brand-accent hover:bg-brand-accent/25 hover:border-brand-accent/50 shadow-sm transition-all">Save</Button>
       </div>
 
     </form>

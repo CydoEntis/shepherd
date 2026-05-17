@@ -314,7 +314,7 @@ export function NewSessionForm({ variant = 'icon' }: { variant?: 'icon' | 'sideb
           <>
             <div className={cn(
               'flex items-center justify-between px-3 py-2.5 rounded-md border transition-colors',
-              yoloMode ? 'border-amber-500/40 bg-amber-500/5' : 'border-brand-panel'
+              yoloMode ? 'border-amber-500/40 bg-amber-500/5' : 'border-brand-panel/50'
             )}>
               <div className="flex items-center gap-2 min-w-0">
                 <Zap size={12} className={cn('flex-shrink-0', yoloMode ? 'text-amber-400' : 'text-zinc-500')} />
@@ -353,7 +353,7 @@ export function NewSessionForm({ variant = 'icon' }: { variant?: 'icon' | 'sideb
         {sbxAvailable && !(yoloMode && settings.sandboxYoloMode && !skipSandbox) && (
           <div className={cn(
             'flex items-center justify-between px-3 py-2.5 rounded-md border transition-colors',
-            useSandboxMode ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-brand-panel'
+            useSandboxMode ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-brand-panel/50'
           )}>
             <div className="flex items-center gap-2 min-w-0">
               <ShieldCheck size={12} className={cn('flex-shrink-0', useSandboxMode ? 'text-emerald-400' : 'text-zinc-500')} />
@@ -374,7 +374,7 @@ export function NewSessionForm({ variant = 'icon' }: { variant?: 'icon' | 'sideb
           <div className="flex flex-col gap-1.5">
             <Label>Working directory</Label>
             <div className="flex gap-2">
-              <div className="flex-1 flex items-center gap-2 px-3 h-9 rounded-md border border-input bg-background text-xs text-zinc-400 min-w-0">
+              <div className="flex-1 flex items-center gap-2 px-3 h-9 rounded-lg border border-brand-panel/60 bg-brand-surface text-xs text-zinc-400 min-w-0">
                 {selectedDir ? (
                   <>
                     <span className="truncate flex-1" title={selectedDir}>…/{shortDir}</span>
@@ -393,7 +393,7 @@ export function NewSessionForm({ variant = 'icon' }: { variant?: 'icon' | 'sideb
               <button
                 type="button"
                 onClick={pickDir}
-                className="flex items-center justify-center px-3 rounded border border-brand-panel bg-brand-panel hover:bg-brand-panel/60 text-zinc-400 hover:text-zinc-200 transition-colors flex-shrink-0"
+                className="flex items-center justify-center px-3 h-9 rounded-lg border border-brand-panel/60 bg-brand-surface hover:bg-brand-panel text-zinc-400 hover:text-zinc-200 transition-colors flex-shrink-0"
                 title="Browse"
               >
                 <FolderOpen size={14} />
@@ -405,7 +405,7 @@ export function NewSessionForm({ variant = 'icon' }: { variant?: 'icon' | 'sideb
         {!isWorkspaceMode && !isSplitMode && selectedPreset !== 'shell' && !!selectedDir && (
           <div className={cn(
             'flex items-center justify-between px-3 py-2.5 rounded-md border transition-colors',
-            useWorktree ? 'border-brand-accent/40 bg-brand-accent/5' : 'border-brand-panel'
+            useWorktree ? 'border-brand-accent/40 bg-brand-accent/5' : 'border-brand-panel/50'
           )}>
             <div className="flex items-center gap-2 min-w-0">
               <GitBranch size={12} className={cn('flex-shrink-0', useWorktree ? 'text-brand-accent' : 'text-zinc-500')} />
@@ -439,7 +439,7 @@ export function NewSessionForm({ variant = 'icon' }: { variant?: 'icon' | 'sideb
         )}
 
         <div className="flex justify-end gap-2 mt-1">
-          <Button type="button" variant="ghost" onClick={() => setOpen(false)} disabled={loading}>
+          <Button type="button" variant="orbit" onClick={() => setOpen(false)} disabled={loading}>
             Cancel
           </Button>
           <Button
