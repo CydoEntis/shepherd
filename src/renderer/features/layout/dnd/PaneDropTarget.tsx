@@ -47,7 +47,12 @@ export function PaneDropTarget({ leafId, tabId, children }: Props): JSX.Element 
   const activeZone = activeDropTarget?.leafId === leafId ? activeDropTarget.side : null
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    if (!dragState || isSource || !paneRef.current) return
+    // OS file drags have no internal dragState — let child elements (TerminalPane) handle them
+    if (!dragState) {
+      if (e.dataTransfer.types.includes('Files')) e.preventDefault()
+      return
+    }
+    if (isSource || !paneRef.current) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     const side = hitSide(e, paneRef.current)
@@ -84,22 +89,25 @@ export function PaneDropTarget({ leafId, tabId, children }: Props): JSX.Element 
       }
 
       if (existingLeafId && existingTabId) {
-        // File already open — move it to the drop position if there's a valid zone
         if (activeZone && existingLeafId !== leafId) {
           if (existingTabId === tabId) {
+            // Already in this tab — just reposition it
             moveLayout(tabId, existingLeafId, leafId, direction, side)
+            setFocusedLeaf(existingLeafId)
           } else {
-            const srcTree = paneTree[existingTabId]
-            if (srcTree) {
-              const srcLeaf = findLeafById(srcTree, existingLeafId)
-              if (srcLeaf) {
-                insertLayout(tabId, leafId, direction, srcLeaf, side)
-                removeLayoutLeaf(existingTabId, existingLeafId)
-              }
+            // In a different tab (e.g. file tab) — open a new independent copy here
+            const newLeaf = makeFileEditorLeaf(normalizePath(filePath))
+            const currentTree = paneTree[tabId]
+            if (currentTree?.type === 'leaf' && currentTree.panel === 'home' && currentTree.id === leafId) {
+              replaceLayoutLeaf(tabId, leafId, newLeaf)
+            } else {
+              insertLayout(tabId, leafId, direction, newLeaf, side)
             }
+            setFocusedLeaf(newLeaf.id)
           }
+        } else {
+          setFocusedLeaf(existingLeafId)
         }
-        setFocusedLeaf(existingLeafId)
         endDrag()
         return
       }
@@ -151,8 +159,8 @@ export function PaneDropTarget({ leafId, tabId, children }: Props): JSX.Element 
     >
       {children}
 
-      {/* Transparent overlay — blocks terminal canvas from eating drag events */}
-      {isDragging && !isSource && (
+      {/* Transparent overlay — blocks terminal canvas from eating drag events (not for file-path drags so terminals can receive them) */}
+      {isDragging && !isSource && dragState?.type !== 'file-path' && (
         <div className="absolute inset-0 z-20" />
       )}
 

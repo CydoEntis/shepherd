@@ -80,6 +80,7 @@ export function TerminalPane({ sessionId, paneItems }: Props): JSX.Element {
 
   const handleDrop = (e: React.DragEvent): void => {
     e.preventDefault()
+    e.stopPropagation()
     setIsDragOver(false)
     const orbitPath = e.dataTransfer.getData('application/orbit-file')
     if (orbitPath) {
