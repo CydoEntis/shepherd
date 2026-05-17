@@ -167,7 +167,7 @@ const APP_THEME_EDITOR_BG: Record<string, { bg: string; lineHighlight: string; g
   aurora: { bg: '#040c0e', lineHighlight: '#0a181c50', gutter: '#040c0e' },
   mars:   { bg: '#100805', lineHighlight: '#1e110850', gutter: '#100805' },
   pulsar: { bg: '#040814', lineHighlight: '#0a102250', gutter: '#040814' },
-  cosmos: { bg: '#200020', lineHighlight: '#380038', gutter: '#200020' },
+  cosmos: { bg: '#100214', lineHighlight: '#20042a50', gutter: '#100214' },
   void:   { bg: '#161616', lineHighlight: '#222222', gutter: '#161616' },
   system: { bg: '#0f1117', lineHighlight: '#1a1d2480', gutter: '#0f1117' },
 }

@@ -31,7 +31,7 @@ const THEME_SWATCHES: { id: AppSettings['theme']; label: string; bg: string; acc
   { id: 'aurora', label: 'Aurora', bg: '#040c0e', accent: '#00e6a0' },
   { id: 'mars',   label: 'Mars',   bg: '#100805', accent: '#ff692d' },
   { id: 'pulsar', label: 'Pulsar', bg: '#040814', accent: '#00d7ff' },
-  { id: 'cosmos', label: 'Cosmos', bg: '#200020', accent: '#c89bff' },
+  { id: 'cosmos', label: 'Cosmos', bg: '#100214', accent: '#be8cf0' },
   { id: 'void',   label: 'Void',   bg: '#000000', accent: '#c8c8c8' },
   { id: 'system', label: 'System', bg: '#1a1a2e', accent: '#71717a' },
 ]

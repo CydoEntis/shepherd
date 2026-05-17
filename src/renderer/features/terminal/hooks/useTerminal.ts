@@ -225,8 +225,8 @@ export const TERMINAL_THEME_LIST: { id: string; label: string }[] = [
 ]
 
 const COSMOS_TERMINAL_THEME = {
-  background: '#2c0834', foreground: '#e0c8ff', cursor: '#c89bff',
-  black: '#2c0834', brightBlack: '#500050',
+  background: '#100214', foreground: '#d8beff', cursor: '#be8cf0',
+  black: '#100214', brightBlack: '#2a0636',
   red: '#ff6b8a', brightRed: '#ff9aad',
   green: '#78ffd6', brightGreen: '#a0ffe6',
   yellow: '#ffd166', brightYellow: '#ffe299',
