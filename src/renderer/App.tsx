@@ -393,7 +393,7 @@ export function App(): JSX.Element {
               <ErrorBoundary>
               <AgentMonitorLayout
                 sessionId={
-                  workspaceSessionId && (sessions[workspaceSessionId] || workspaceSessionId === '__root__')
+                  workspaceSessionId && (sessions[workspaceSessionId] || workspaceSessionId === '__root__' || !!paneTree[workspaceSessionId])
                     ? workspaceSessionId
                     : '__root__'
                 }

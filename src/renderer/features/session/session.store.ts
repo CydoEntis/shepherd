@@ -70,8 +70,8 @@ export interface SessionSlice {
 
   updateSessionCwd: (sessionId: string, cwd: string) => void
 
-  fileTabs: Record<string, { path: string; name: string }>
-  openFileTab: (path: string) => void
+  fileTabs: Record<string, { path: string; name: string; workspaceId?: string }>
+  openFileTab: (path: string, workspaceId?: string) => void
   closeFileTab: (tabId: string) => void
 }
 
@@ -563,7 +563,7 @@ export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', neve
       state.openFilesList = state.openFilesList.filter((p) => p !== path)
     }),
 
-  openFileTab: (path) =>
+  openFileTab: (path, workspaceId) =>
     set((state) => {
       const norm = (p: string): string => p.replace(/\\/g, '/')
       const tabId = `file:${norm(path)}`
@@ -574,9 +574,9 @@ export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', neve
         return
       }
       const name = norm(path).split('/').pop() ?? path
-      state.fileTabs[tabId] = { path: norm(path), name }
+      state.fileTabs[tabId] = { path: norm(path), name, workspaceId }
       state.tabOrder.push(tabId)
-      state.paneTree[tabId] = makeFileEditorLeaf(path) as LayoutNode
+      state.paneTree[tabId] = makeFileEditorLeaf(norm(path)) as LayoutNode
       state.activeSessionId = tabId
       state.focusedSessionId = null
       state.focusedLeafId = null
