@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { X, Plus, GripVertical, Pencil, ChevronRight, ArrowRightLeft } from 'lucide-react'
 import { useStore } from '../../../store/root.store'
@@ -8,7 +8,7 @@ import { EditSessionModal } from './EditSessionModal'
 import { cn, normalizePath } from '../../../lib/utils'
 import { ROOT_WORKSPACE_ID } from '@shared/ipc-types'
 import { useLayoutDnd } from '../../layout/dnd/LayoutDndContext'
-import { findTabForSession } from '../../layout/layout-tree'
+import { findTabForSession, collectFileEditorLeaves } from '../../layout/layout-tree'
 import { WindowMoveSubmenu } from '../../window/components/WindowMoveSubmenu'
 import { FileIcon } from '../../fs/components/FileTree'
 
@@ -37,6 +37,8 @@ export function SessionDock({ activeSessionId, onSelectSession, showAddButton = 
   const upsertSession = useStore((s) => s.upsertSession)
   const fileTabs = useStore((s) => s.fileTabs)
   const closeFileTab = useStore((s) => s.closeFileTab)
+  const focusedLeafId = useStore((s) => s.focusedLeafId)
+  const paneTree = useStore((s) => s.paneTree)
 
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
@@ -86,6 +88,32 @@ export function SessionDock({ activeSessionId, onSelectSession, showAddButton = 
     return rightX + submenuWidth > window.innerWidth ? menuX - submenuWidth - 4 : rightX
   }
 
+  // Which file path is shown in the currently focused leaf (across all tabs)?
+  const focusedFilePath = (() => {
+    if (!focusedLeafId) return null
+    for (const tree of Object.values(paneTree)) {
+      if (!tree) continue
+      const leaf = collectFileEditorLeaves(tree).find((l) => l.leafId === focusedLeafId)
+      if (leaf) return normalizePath(leaf.filePath).toLowerCase()
+    }
+    return null
+  })()
+
+  // Map from normalized file path → ownerTabId for pane trees that contain 2+ file-editor leaves
+  const splitFileGroupMap = useMemo(() => {
+    const map = new Map<string, string>() // normalizedPath → ownerTabId
+    for (const [tabId, tree] of Object.entries(paneTree)) {
+      if (!tree) continue
+      const leaves = collectFileEditorLeaves(tree)
+      if (leaves.length >= 2) {
+        for (const leaf of leaves) {
+          map.set(normalizePath(leaf.filePath).toLowerCase(), tabId)
+        }
+      }
+    }
+    return map
+  }, [paneTree])
+
   const isRootWorkspace = activeWorkspaceId === ROOT_WORKSPACE_ID
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId)
   const normalizedActive = activeWorkspace?.rootPath ? normalizePath(activeWorkspace.rootPath) : undefined
@@ -108,16 +136,27 @@ export function SessionDock({ activeSessionId, onSelectSession, showAddButton = 
     return root === normalizedActive || root.startsWith(normalizedActive + '/')
   })
 
-  const allTabIds = [
-    ...sessionTabs,
-    ...tabOrder.filter((id) => !!fileTabs[id]),
-  ]
+  const sessionTabSet = new Set(sessionTabs)
+  const allTabIds = tabOrder.filter((id) => {
+    if (sessionTabSet.has(id)) return true
+    const ft = fileTabs[id]
+    if (!ft) return false
+    if (ft.workspaceId) return ft.workspaceId === activeWorkspaceId
+    return isRootWorkspace
+  })
 
   const handleDragStart = (e: React.DragEvent, id: string): void => {
     setDraggingId(id)
     e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('orbit/session-id', id)
-    startDrag({ type: 'sidebar-session', sessionId: id })
+    const ft = fileTabs[id]
+    if (ft) {
+      e.dataTransfer.setData('application/orbit-file', ft.path)
+      e.dataTransfer.setData('text/plain', ft.path)
+      startDrag({ type: 'file-path', filePath: ft.path })
+    } else {
+      e.dataTransfer.setData('orbit/session-id', id)
+      startDrag({ type: 'sidebar-session', sessionId: id })
+    }
   }
 
   const handleDragOver = (e: React.DragEvent, id: string): void => {
@@ -209,11 +248,16 @@ export function SessionDock({ activeSessionId, onSelectSession, showAddButton = 
         const isFileTab = !!fileTabs[tabId]
         const fileMeta = fileTabs[tabId]
         const meta = sessions[tabId]
-        const isActive = (focusedSessionId ?? activeSessionId) === tabId
+        const isActive = isFileTab
+          ? focusedFilePath !== null
+            ? (fileMeta !== undefined && normalizePath(fileMeta.path).toLowerCase() === focusedFilePath)
+            : activeSessionId === tabId
+          : (focusedSessionId ?? activeSessionId) === tabId
         const isDragging = draggingId === tabId
         const isOver = dragOverId === tabId && draggingId !== tabId
 
         if (isFileTab && fileMeta) {
+          const inSplitGroup = splitFileGroupMap.has(normalizePath(fileMeta.path).toLowerCase())
           return (
             <div
               key={tabId}
@@ -223,14 +267,33 @@ export function SessionDock({ activeSessionId, onSelectSession, showAddButton = 
               onDrop={() => handleDrop(tabId)}
               onDragEnd={cleanup}
               onClick={() => {
-                useStore.getState().setActiveSession(tabId)
-                useStore.getState().setFocusedLeaf(null)
+                // If this file is already open as a split in another tab, focus it there
+                const { paneTree: tree, setActiveSession, setFocusedLeaf } = useStore.getState()
+                const norm = normalizePath(fileMeta.path)
+                let focusedElsewhere = false
+                for (const [tId, tTree] of Object.entries(tree)) {
+                  if (tId === tabId || !tTree) continue
+                  const leaf = collectFileEditorLeaves(tTree).find((l) => normalizePath(l.filePath).toLowerCase() === norm.toLowerCase())
+                  if (leaf) {
+                    onSelectSession(tId)
+                    setActiveSession(tId)
+                    setFocusedLeaf(leaf.leafId)
+                    focusedElsewhere = true
+                    break
+                  }
+                }
+                if (!focusedElsewhere) {
+                  onSelectSession(tabId)
+                  setActiveSession(tabId)
+                  setFocusedLeaf(null)
+                }
               }}
               onContextMenu={(e) => e.preventDefault()}
               className={cn(
-                'group flex items-center gap-1.5 px-2.5 py-1 rounded-lg border shadow-sm cursor-pointer transition-all flex-shrink-0 select-none',
-                isActive ? 'text-zinc-100 bg-brand-panel/40 border-brand-panel' : 'text-zinc-400 hover:text-zinc-200 border-brand-panel/40',
-                !isActive && !isOver && 'opacity-60 hover:opacity-90',
+                'relative group flex items-center gap-1.5 px-2.5 py-1 rounded-lg border shadow-sm cursor-pointer transition-all flex-shrink-0 select-none',
+                isActive
+                  ? 'text-zinc-100 bg-brand-accent/10 border-brand-accent/50'
+                  : 'text-zinc-400 hover:text-zinc-200 border-brand-panel/40 opacity-50 hover:opacity-75',
                 isOver && 'opacity-100 border-brand-accent/70',
                 isDragging && 'opacity-30'
               )}
@@ -245,6 +308,12 @@ export function SessionDock({ activeSessionId, onSelectSession, showAddButton = 
               >
                 <X size={10} />
               </button>
+              {inSplitGroup && (
+                <div className={cn(
+                  'absolute bottom-0 left-2 right-2 h-[2px] rounded-full transition-all',
+                  isActive ? 'bg-brand-accent' : 'bg-brand-accent/30'
+                )} />
+              )}
             </div>
           )
         }
