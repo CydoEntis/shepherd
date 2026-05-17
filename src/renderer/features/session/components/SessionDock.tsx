@@ -10,6 +10,7 @@ import { ROOT_WORKSPACE_ID } from '@shared/ipc-types'
 import { useLayoutDnd } from '../../layout/dnd/LayoutDndContext'
 import { findTabForSession } from '../../layout/layout-tree'
 import { WindowMoveSubmenu } from '../../window/components/WindowMoveSubmenu'
+import { FileIcon } from '../../fs/components/FileTree'
 
 interface Props {
   activeSessionId: string | null
@@ -34,6 +35,8 @@ export function SessionDock({ activeSessionId, onSelectSession, showAddButton = 
   const isMainWindow = useStore((s) => s.isMainWindow)
   const detachPane = useStore((s) => s.detachPane)
   const upsertSession = useStore((s) => s.upsertSession)
+  const fileTabs = useStore((s) => s.fileTabs)
+  const closeFileTab = useStore((s) => s.closeFileTab)
 
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
@@ -104,6 +107,11 @@ export function SessionDock({ activeSessionId, onSelectSession, showAddButton = 
     const root = normalizePath(m.projectRoot ?? m.cwd)
     return root === normalizedActive || root.startsWith(normalizedActive + '/')
   })
+
+  const allTabIds = [
+    ...sessionTabs,
+    ...tabOrder.filter((id) => !!fileTabs[id]),
+  ]
 
   const handleDragStart = (e: React.DragEvent, id: string): void => {
     setDraggingId(id)
@@ -197,11 +205,51 @@ export function SessionDock({ activeSessionId, onSelectSession, showAddButton = 
 
   return (
     <div className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-transparent overflow-x-auto scrollbar-none w-full min-h-[40px]">
-      {sessionTabs.map((tabId) => {
+      {allTabIds.map((tabId) => {
+        const isFileTab = !!fileTabs[tabId]
+        const fileMeta = fileTabs[tabId]
         const meta = sessions[tabId]
         const isActive = (focusedSessionId ?? activeSessionId) === tabId
         const isDragging = draggingId === tabId
         const isOver = dragOverId === tabId && draggingId !== tabId
+
+        if (isFileTab && fileMeta) {
+          return (
+            <div
+              key={tabId}
+              draggable
+              onDragStart={(e) => handleDragStart(e, tabId)}
+              onDragOver={(e) => handleDragOver(e, tabId)}
+              onDrop={() => handleDrop(tabId)}
+              onDragEnd={cleanup}
+              onClick={() => {
+                useStore.getState().setActiveSession(tabId)
+                useStore.getState().setFocusedLeaf(null)
+              }}
+              onContextMenu={(e) => e.preventDefault()}
+              className={cn(
+                'group flex items-center gap-1.5 px-2.5 py-1 rounded-lg border shadow-sm cursor-pointer transition-all flex-shrink-0 select-none',
+                isActive ? 'text-zinc-100 bg-brand-panel/40 border-brand-panel' : 'text-zinc-400 hover:text-zinc-200 border-brand-panel/40',
+                !isActive && !isOver && 'opacity-60 hover:opacity-90',
+                isOver && 'opacity-100 border-brand-accent/70',
+                isDragging && 'opacity-30'
+              )}
+            >
+              <span className="flex-shrink-0 w-3.5 flex items-center">
+                <FileIcon name={fileMeta.name} />
+              </span>
+              <span className="text-xs font-medium truncate max-w-[120px]">{fileMeta.name}</span>
+              <button
+                onClick={(e) => { e.stopPropagation(); closeFileTab(tabId) }}
+                className="opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-red-400 transition-all flex-shrink-0 ml-0.5"
+              >
+                <X size={10} />
+              </button>
+            </div>
+          )
+        }
+
+        if (!meta) return null
         const color = meta.color ?? '#6366f1'
 
         return (

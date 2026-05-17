@@ -57,6 +57,7 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
 
   const focusedLeafId = useStore((s) => s.focusedLeafId)
   const setFocusedLeaf = useStore((s) => s.setFocusedLeaf)
+  const openFileTab = useStore((s) => s.openFileTab)
   const { startDrag, endDrag } = useLayoutDnd()
   const ghostRef = useRef<HTMLImageElement | null>(null)
   const GHOST_SRC = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
@@ -351,39 +352,8 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
   }, [focusedLeafId, paneTree])
 
   const navigateToFile = useCallback((filePath: string) => {
-    const state = useStore.getState()
-
-    // If file is already visible in the layout, just focus it
-    for (const tabId of Object.keys(state.paneTree)) {
-      const tree = state.paneTree[tabId]
-      if (!tree) continue
-      const leaf = collectFileEditorLeaves(tree).find((l) => normalizePath(l.filePath) === normalizePath(filePath))
-      if (leaf) {
-        if (tabId !== activeSessionId) onSelectSession(tabId)
-        setFocusedLeaf(leaf.leafId)
-        return
-      }
-    }
-
-    // Not in layout — open alongside existing panes, never replace
-    const tabId = (activeSessionId && state.paneTree[activeSessionId])
-      ? activeSessionId
-      : (state.tabOrder.find((id) => state.paneTree[id]) ?? '__root__')
-    const tree = state.paneTree[tabId]
-    if (!tree) return
-
-    const newLeaf = makeFileEditorLeaf(filePath)
-    const fileLeaves = collectFileEditorLeaves(tree)
-    if (fileLeaves.length > 0) {
-      const target = fileLeaves.find((l) => l.leafId === state.focusedLeafId) ?? fileLeaves[0]
-      state.replaceLayoutLeaf(tabId, target.leafId, newLeaf)
-    } else if (tree.type === 'leaf' && tree.panel === 'home') {
-      state.replaceLayoutLeaf(tabId, tree.id, newLeaf)
-    } else {
-      state.insertLayoutAtRight(tabId, newLeaf)
-    }
-    state.setFocusedLeaf(newLeaf.id)
-  }, [activeSessionId, onSelectSession, setFocusedLeaf])
+    openFileTab(filePath)
+  }, [openFileTab])
 
   const handleSessionSelect = useCallback((sessionId: string): void => {
     const tabId = findTabForSession(paneTree, sessionId)

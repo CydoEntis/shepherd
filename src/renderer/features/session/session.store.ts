@@ -3,6 +3,7 @@ import type { SessionMeta, PersistedLayout } from '@shared/ipc-types'
 import type { RootStore } from '../../store/root.store'
 import {
   makeTerminalLeaf, makeNotesLeaf, makeMarkdownPreviewLeaf, makeHomeLeaf,
+  makeFileEditorLeaf,
   splitTerminalLeaf, removeTerminalLeaf,
   removeNode, insertAtRight, insertNode, moveNode, replaceNode,
   collectSessionIds, findTabForSession, findNotesLeafId, hasMarkdownPreviewForNote,
@@ -68,6 +69,10 @@ export interface SessionSlice {
   removeFileFromAllLayouts: (filePath: string) => void
 
   updateSessionCwd: (sessionId: string, cwd: string) => void
+
+  fileTabs: Record<string, { path: string; name: string }>
+  openFileTab: (path: string) => void
+  closeFileTab: (tabId: string) => void
 }
 
 export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', never]], [], SessionSlice> = (set) => ({
@@ -81,6 +86,7 @@ export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', neve
   isRestoringLayout: false,
   detachedNoteIds: [],
   openFilesList: [],
+  fileTabs: {},
 
   upsertSession: (meta) =>
     set((state) => {
@@ -119,6 +125,7 @@ export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', neve
         collectSessionIds(tree).forEach((sid) => delete state.sessions[sid])
         delete state.paneTree[tabId]
       }
+      if (state.fileTabs[tabId]) delete state.fileTabs[tabId]
     }),
 
   splitPane: (tabId, targetSessionId, direction, newMeta) =>
@@ -554,6 +561,39 @@ export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', neve
   removeOpenFile: (path) =>
     set((state) => {
       state.openFilesList = state.openFilesList.filter((p) => p !== path)
+    }),
+
+  openFileTab: (path) =>
+    set((state) => {
+      const norm = (p: string): string => p.replace(/\\/g, '/')
+      const tabId = `file:${norm(path)}`
+      if (state.tabOrder.includes(tabId)) {
+        state.activeSessionId = tabId
+        state.focusedSessionId = null
+        state.focusedLeafId = null
+        return
+      }
+      const name = norm(path).split('/').pop() ?? path
+      state.fileTabs[tabId] = { path: norm(path), name }
+      state.tabOrder.push(tabId)
+      state.paneTree[tabId] = makeFileEditorLeaf(path) as LayoutNode
+      state.activeSessionId = tabId
+      state.focusedSessionId = null
+      state.focusedLeafId = null
+    }),
+
+  closeFileTab: (tabId) =>
+    set((state) => {
+      if (!state.fileTabs[tabId]) return
+      if (state.activeSessionId === tabId) {
+        const idx = state.tabOrder.indexOf(tabId)
+        const others = state.tabOrder.filter((id) => id !== tabId)
+        const toLeft = state.tabOrder.slice(0, idx).filter((id) => id !== tabId)
+        state.activeSessionId = toLeft.length > 0 ? toLeft[toLeft.length - 1] : (others[0] ?? '__root__')
+      }
+      state.tabOrder = state.tabOrder.filter((id) => id !== tabId)
+      delete state.paneTree[tabId]
+      delete state.fileTabs[tabId]
     }),
 
   removeFileFromAllLayouts: (filePath) =>
