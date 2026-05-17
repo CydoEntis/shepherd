@@ -102,7 +102,7 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
       }))
     )
     const id = focusedBelongsHere ? focusedSessionId : activeSessionId
-    const cwd = id ? sessions[id]?.cwd : undefined
+    const cwd = id && !id.startsWith('file:') ? sessions[id]?.cwd : undefined
     if (cwd) return normalizePath(cwd)
     return normalizedActive ?? ''
   }, [isRootWorkspace, normalizedActive, focusedSessionId, activeSessionId, sessions, workspaces])
@@ -352,8 +352,22 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
   }, [focusedLeafId, paneTree])
 
   const navigateToFile = useCallback((filePath: string) => {
-    openFileTab(filePath)
-  }, [openFileTab])
+    const norm = normalizePath(filePath)
+    // Check if file is already open as a split pane in any tab
+    for (const tabId of Object.keys(paneTree)) {
+      const tree = paneTree[tabId]
+      if (!tree) continue
+      const leaf = collectFileEditorLeaves(tree).find((l) => normalizePath(l.filePath) === norm)
+      if (leaf) {
+        // Already visible in a pane — switch to its tab and focus the leaf
+        onSelectSession(tabId)
+        useStore.getState().setActiveSession(tabId)
+        setFocusedLeaf(leaf.leafId)
+        return
+      }
+    }
+    openFileTab(filePath, activeWorkspaceId)
+  }, [openFileTab, activeWorkspaceId, paneTree, onSelectSession, setFocusedLeaf])
 
   const handleSessionSelect = useCallback((sessionId: string): void => {
     const tabId = findTabForSession(paneTree, sessionId)
@@ -486,14 +500,30 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
   )
 
   const handleFileDragOver = (e: React.DragEvent): void => {
-    if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); setIsDragOver(true) }
+    if (e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes('application/orbit-file')) {
+      e.preventDefault()
+      setIsDragOver(true)
+    }
   }
 
   const handleFileDrop = (e: React.DragEvent): void => {
     e.preventDefault()
     setIsDragOver(false)
+
+    // In-app file drag (from file tree)
+    const orbitPath = e.dataTransfer.getData('application/orbit-file')
+    if (orbitPath && fileTreeRoot) {
+      const fileName = orbitPath.replace(/\\/g, '/').split('/').pop() ?? 'file'
+      const destPath = fileTreeRoot + '/' + fileName
+      copyFile(orbitPath, destPath)
+        .then(() => setFileRefreshTick((t) => t + 1))
+        .catch(() => toast.error(`Failed to copy ${fileName}`))
+      return
+    }
+
+    // OS file drag
     const files = Array.from(e.dataTransfer.files)
-    if (activeView === 'files' && fileTreeRoot) {
+    if (fileTreeRoot) {
       for (const file of files) {
         const srcPath = (file as unknown as { path: string }).path
         if (!srcPath) continue
@@ -504,7 +534,7 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
       }
       return
     }
-    if (!activeSessionId || activeSessionId === '__root__') return
+    if (!activeSessionId || activeSessionId.startsWith('file:') || activeSessionId === '__root__') return
     for (const file of files) {
       const path = (file as unknown as { path: string }).path
       if (!path) continue
@@ -533,7 +563,9 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
           >
             <FolderOpen size={14} className="text-zinc-500 flex-shrink-0" />
             <span className="text-sm font-medium text-zinc-300 truncate flex-1">
-              {activeWorkspace?.name ?? 'Home'}
+              {isRootWorkspace
+                ? (fileTreeRoot ? fileTreeRoot.split('/').filter(Boolean).pop() ?? 'Home' : 'Home')
+                : (activeWorkspace?.name ?? 'Home')}
             </span>
             <ChevronDown size={12} className={cn('text-zinc-500 transition-transform flex-shrink-0', wsOpen && 'rotate-180')} />
           </button>
@@ -571,7 +603,11 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
                 onClick={() => { onWorkspaceChange(ROOT_WORKSPACE_ID); setWsOpen(false) }}
                 className={cn('w-full px-3 py-1.5 text-xs text-left transition-colors hover:bg-brand-panel', isRootWorkspace && 'bg-brand-panel/60 text-zinc-200')}
               >
-                <span className={isRootWorkspace ? 'text-zinc-200' : 'text-zinc-400'}>{workspaces.find((w) => w.isRoot)?.name ?? 'Home'}</span>
+                <span className={isRootWorkspace ? 'text-zinc-200' : 'text-zinc-400'}>
+                  {fileTreeRoot && isRootWorkspace
+                    ? fileTreeRoot.split('/').filter(Boolean).pop() ?? 'Home'
+                    : (workspaces.find((w) => w.isRoot)?.name ?? 'Home')}
+                </span>
               </button>
               {workspaces.filter((w) => !w.isRoot).length > 0 && <div className="h-px bg-brand-panel my-1" />}
               {workspaces.filter((w) => !w.isRoot).map((w) => (
