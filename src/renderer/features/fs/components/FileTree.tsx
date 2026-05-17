@@ -80,7 +80,7 @@ function getFileIconMeta(name: string): { type: FileIconType; color: string } {
 
 export function FileIcon({ name }: { name: string }): JSX.Element {
   const { type, color } = getFileIconMeta(name)
-  const props = { size: 13, className: color }
+  const props = { size: 15, className: color }
   if (type === 'code') return <FileCode {...props} />
   if (type === 'json') return <FileJson {...props} />
   if (type === 'text') return <FileText {...props} />
@@ -132,8 +132,8 @@ function InlineCreateRow({ type, depth, value, onChange, onSubmit, onCancel }: I
       style={{ paddingLeft: `${6 + depth * 12}px`, paddingRight: 8 }}
     >
       <span className="flex-shrink-0 w-3" />
-      <span className="flex-shrink-0 text-zinc-400 w-3.5 flex items-center">
-        {type === 'folder' ? <Folder size={13} className="text-yellow-500/70" /> : <FileIcon name="new-file" />}
+      <span className="flex-shrink-0 text-zinc-400 w-4 flex items-center">
+        {type === 'folder' ? <Folder size={15} className="text-yellow-500/70" /> : <FileIcon name="new-file" />}
       </span>
       <Input
         ref={inputRef}
@@ -256,7 +256,7 @@ function TreeNode({ entry, depth, gitMap, projectRoot, activeFilePath, focusedPa
           onExternalDrop(norm(entry.path), Array.from(e.dataTransfer.files))
         } : undefined}
         className={cn(
-          'w-full flex items-center gap-1.5 py-1 text-left transition-colors rounded-sm group',
+          'w-full flex items-center gap-1.5 py-1.5 text-left transition-colors rounded-sm group',
           extDropDir === norm(entry.path)
             ? 'bg-brand-accent/20 ring-1 ring-inset ring-brand-accent/50'
             : isFocused
@@ -268,11 +268,11 @@ function TreeNode({ entry, depth, gitMap, projectRoot, activeFilePath, focusedPa
       >
         <button onClick={toggle} className="flex items-center gap-1 flex-1 min-w-0 text-left">
           {entry.isDirectory
-            ? <span className="flex-shrink-0 text-zinc-500 w-3">{isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}</span>
-            : <span className="flex-shrink-0 w-3" />}
-          <span className="flex-shrink-0 w-3.5 flex items-center">
+            ? <span className="flex-shrink-0 text-zinc-500 w-3.5">{isExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</span>
+            : <span className="flex-shrink-0 w-3.5" />}
+          <span className="flex-shrink-0 w-4 flex items-center">
             {entry.isDirectory
-              ? isExpanded ? <FolderOpen size={13} className="text-yellow-500/70" /> : <Folder size={13} className="text-yellow-500/70" />
+              ? isExpanded ? <FolderOpen size={15} className="text-yellow-500/70" /> : <Folder size={15} className="text-yellow-500/70" />
               : <FileIcon name={entry.name} />}
           </span>
           {isRenaming ? (
@@ -286,7 +286,7 @@ function TreeNode({ entry, depth, gitMap, projectRoot, activeFilePath, focusedPa
               className="flex-1 h-6 px-1 text-xs min-w-0"
             />
           ) : (
-            <span className={cn('text-xs truncate flex-1', xy ? statusColor(xy) : 'text-zinc-300')}>
+            <span className={cn('text-sm truncate flex-1', xy ? statusColor(xy) : 'text-zinc-300')}>
               {entry.name}
             </span>
           )}
@@ -682,10 +682,10 @@ export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileC
                   isActive ? 'bg-brand-panel/60' : 'hover:bg-brand-panel/40'
                 )}
               >
-                <span className="flex-shrink-0 w-3.5 flex items-center"><FileIcon name={name} /></span>
+                <span className="flex-shrink-0 w-4 flex items-center"><FileIcon name={name} /></span>
                 <span className="flex-1 min-w-0">
-                  <span className="text-[11px] text-zinc-300 truncate block">{name}</span>
-                  {dir && <span className="text-[10px] text-zinc-600 truncate block">{dir}</span>}
+                  <span className="text-xs text-zinc-300 truncate block">{name}</span>
+                  {dir && <span className="text-[11px] text-zinc-600 truncate block">{dir}</span>}
                 </span>
               </button>
             )

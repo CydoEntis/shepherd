@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
-import { Plus, ChevronDown, ChevronRight, FolderOpen, FolderTree, X, Users, Terminal, Search, FilePlus2, FolderPlus, ExternalLink, SearchCode } from 'lucide-react'
+import { Plus, ChevronDown, ChevronRight, FolderOpen, X, Users, Terminal, FilePlus2, FolderPlus, ExternalLink, FolderX } from 'lucide-react'
 import { useStore } from '../../../store/root.store'
 import { patchSession, killSession } from '../../session/session.service'
 import { EditSessionModal } from '../../session/components/EditSessionModal'
@@ -23,7 +23,6 @@ import { SessionCtxMenu } from './SessionCtxMenu'
 import { GroupCtxMenu } from './GroupCtxMenu'
 import { NewGroupModal } from './NewGroupModal'
 import { FileTree } from '../../fs/components/FileTree'
-import { SearchPanel } from './SearchPanel'
 import type { SessionMeta, Workspace } from '@shared/ipc-types'
 import { ROOT_WORKSPACE_ID } from '@shared/ipc-types'
 
@@ -66,7 +65,6 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
 
   const [activeView, setActiveView] = useState<'files' | 'sessions'>('sessions')
   const [fileRefreshTick, setFileRefreshTick] = useState(0)
-  const [fileSearch, setFileSearch] = useState('')
   const [wsOpen, setWsOpen] = useState(false)
   const [showNewWsModal, setShowNewWsModal] = useState(false)
   const [showNewGroupModal, setShowNewGroupModal] = useState(false)
@@ -78,8 +76,6 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
   const [draggedSessionId, setDraggedSessionId] = useState<string | null>(null)
   const [dragOverGroupId, setDragOverGroupId] = useState<string | null | 'ungrouped'>('ungrouped')
   const [isDragOver, setIsDragOver] = useState(false)
-  const [openInOpen, setOpenInOpen] = useState(false)
-  const [showSearch, setShowSearch] = useState(false)
   const [closingProject, setClosingProject] = useState<Workspace | null>(null)
   const sidebarBodyRef = useRef<HTMLDivElement>(null)
   const installedEditors = useInstalledEditors()
@@ -131,10 +127,9 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
     return () => document.removeEventListener('acc:file-saved', handler)
   }, [])
 
-  // Refresh + clear search when the shown directory changes (cd or workspace switch)
+  // Refresh file tree when directory changes (cd or workspace switch)
   useEffect(() => {
     setFileRefreshTick((t) => t + 1)
-    setFileSearch('')
   }, [fileTreeRoot])
 
   const currentWindowSessionIds = useMemo(() => {
@@ -557,32 +552,44 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
       onDrop={handleFileDrop}
     >
       {/* Workspace switcher */}
-      <div className="flex-shrink-0 relative px-2 py-2">
-        <div className="flex items-stretch bg-brand-panel/50 hover:bg-brand-panel/80 border border-brand-panel rounded-lg shadow-md transition-colors overflow-hidden">
+      <div className="flex-shrink-0 relative px-2 pt-2 pb-[3px]">
+        <div className="flex items-stretch gap-[3px]">
           <button
             onClick={() => setWsOpen((v) => !v)}
-            className="flex items-center gap-2 px-3 py-2 text-left flex-1 min-w-0"
+            className={cn(
+              'flex items-center gap-2 px-3 py-2 text-left flex-1 min-w-0 bg-brand-surface hover:bg-brand-panel/50 border border-brand-panel/60 border-b-0 transition-colors',
+              isRootWorkspace ? 'rounded-t-xl' : 'rounded-tl-xl'
+            )}
           >
-            <FolderOpen size={12} className="text-zinc-500 flex-shrink-0" />
-            <span className="text-xs font-medium text-zinc-300 truncate flex-1">
+            <FolderOpen size={14} className="text-zinc-500 flex-shrink-0" />
+            <span className="text-sm font-medium text-zinc-300 truncate flex-1">
               {activeWorkspace?.name ?? 'Home'}
             </span>
-            <ChevronDown size={10} className={cn('text-zinc-500 transition-transform flex-shrink-0', wsOpen && 'rotate-180')} />
+            <ChevronDown size={12} className={cn('text-zinc-500 transition-transform flex-shrink-0', wsOpen && 'rotate-180')} />
           </button>
+          {!isRootWorkspace && installedEditors.length > 0 && (
+            <button
+              onClick={() => { openInEditor(installedEditors[0].command, fileTreeRoot).catch(() => {}) }}
+              title={`Open in ${installedEditors[0].name}`}
+              className="flex items-center px-2.5 bg-brand-surface hover:bg-brand-panel/50 border border-brand-panel/60 border-b-0 text-zinc-500 hover:text-zinc-300 transition-colors flex-shrink-0"
+            >
+              <ExternalLink size={14} />
+            </button>
+          )}
           {!isRootWorkspace && (
             <button
-              onClick={() => document.dispatchEvent(new CustomEvent('acc:open-file-finder'))}
-              title="File Tree (Ctrl+Shift+E)"
-              className="flex items-center px-2.5 border-l border-brand-panel text-zinc-500 hover:text-zinc-300 transition-colors flex-shrink-0"
+              onClick={() => { const w = activeWorkspace; if (w) setClosingProject(w) }}
+              title="Close project"
+              className="flex items-center px-2.5 bg-brand-surface hover:bg-brand-panel/50 border border-brand-panel/60 border-b-0 rounded-tr-xl text-zinc-500 hover:text-red-400 transition-colors flex-shrink-0"
             >
-              <FolderTree size={12} />
+              <FolderX size={14} />
             </button>
           )}
         </div>
         {wsOpen && (
           <>
             <div className="fixed inset-0 z-40" onClick={() => setWsOpen(false)} />
-            <div className="absolute left-2 right-2 top-full mt-1 z-50 bg-brand-bg border border-brand-panel/60 rounded-lg shadow-xl py-1 max-h-48 overflow-y-auto">
+            <div className="absolute left-2 right-2 top-full mt-1 z-50 bg-brand-surface border border-brand-panel/60 rounded-lg shadow-xl py-1 max-h-48 overflow-y-auto">
               <button
                 onClick={() => { setWsOpen(false); setShowNewWsModal(true) }}
                 className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-zinc-500 hover:bg-brand-panel hover:text-zinc-300 transition-colors text-left"
@@ -667,110 +674,47 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
         )}
       </div>
 
-      {/* Body — always files */}
-      <div className="flex flex-col flex-1 min-h-0" ref={sidebarBodyRef}>
-        <div className="flex flex-col flex-1 min-h-0">
+      {/* Body — file tree card */}
+      <div className="px-2 pb-2 flex flex-col flex-1 min-h-0" ref={sidebarBodyRef}>
+        <div className="flex flex-col flex-1 min-h-0 rounded-b-xl border border-brand-panel/60 bg-brand-surface shadow-md shadow-black/20 overflow-hidden">
           {/* Folder header */}
-          <div className="flex items-center gap-1 px-3 py-1.5 border-b border-brand-panel/40 flex-shrink-0">
-            <span className="text-xs text-zinc-400 truncate flex-1 min-w-0 font-medium">
-              {showSearch ? 'Search' : (fileTreeRoot ? fileTreeRoot.split('/').filter(Boolean).pop() ?? fileTreeRoot : 'No folder open')}
+          <div className="flex items-center gap-1 px-3 py-2 border-b border-brand-panel/40 flex-shrink-0">
+            <span className="text-sm text-zinc-300 truncate flex-1 min-w-0 font-medium">
+              {fileTreeRoot ? fileTreeRoot.split('/').filter(Boolean).pop() ?? fileTreeRoot : 'No folder open'}
             </span>
             {fileTreeRoot && (
               <>
                 <button
                   onClick={() => document.dispatchEvent(new CustomEvent('acc:new-file-at-root', { detail: { parentDir: fileTreeRoot, type: 'file' } }))}
                   title="New File"
-                  className="text-zinc-600 hover:text-zinc-300 transition-colors flex-shrink-0 p-0.5"
+                  className="text-zinc-500 hover:text-zinc-300 transition-colors flex-shrink-0 p-1"
                 >
-                  <FilePlus2 size={12} />
+                  <FilePlus2 size={14} />
                 </button>
                 <button
                   onClick={() => document.dispatchEvent(new CustomEvent('acc:new-file-at-root', { detail: { parentDir: fileTreeRoot, type: 'folder' } }))}
                   title="New Folder"
-                  className="text-zinc-600 hover:text-zinc-300 transition-colors flex-shrink-0 p-0.5"
+                  className="text-zinc-500 hover:text-zinc-300 transition-colors flex-shrink-0 p-1"
                 >
-                  <FolderPlus size={12} />
+                  <FolderPlus size={14} />
                 </button>
-                {installedEditors.length > 0 && (
-                  <div className="relative flex-shrink-0">
-                    <button
-                      onClick={() => setOpenInOpen((v) => !v)}
-                      title="Open In"
-                      className="text-zinc-600 hover:text-zinc-300 transition-colors p-0.5"
-                    >
-                      <ExternalLink size={12} />
-                    </button>
-                    {openInOpen && (
-                      <>
-                        <div className="fixed inset-0 z-40" onClick={() => setOpenInOpen(false)} />
-                        <div className="absolute right-0 top-full mt-1 z-50 bg-brand-surface border border-brand-panel/60 rounded-md shadow-xl py-1 min-w-[140px]">
-                          {installedEditors.map((ed) => (
-                            <button
-                              key={ed.command}
-                              onClick={() => { openInEditor(ed.command, fileTreeRoot).catch(() => {}); setOpenInOpen(false) }}
-                              className="w-full flex items-center px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors text-left"
-                            >
-                              {ed.name}
-                            </button>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
               </>
-            )}
-            {fileTreeRoot && (
-              <button
-                onClick={() => setShowSearch((v) => !v)}
-                title={showSearch ? 'Back to files' : 'Search in files'}
-                className={cn('transition-colors flex-shrink-0 p-0.5', showSearch ? 'text-brand-accent' : 'text-zinc-600 hover:text-zinc-300')}
-              >
-                <SearchCode size={12} />
-              </button>
             )}
             <button
               onClick={() => document.dispatchEvent(new CustomEvent('acc:open-project'))}
               title="Open Folder"
-              className="text-zinc-600 hover:text-zinc-300 transition-colors flex-shrink-0 p-0.5"
+              className="text-zinc-500 hover:text-zinc-300 transition-colors flex-shrink-0 p-1"
             >
-              <FolderOpen size={12} />
+              <FolderOpen size={14} />
             </button>
           </div>
-          {fileTreeRoot && showSearch ? (
-            <SearchPanel
+          {fileTreeRoot ? (
+            <FileTree
               projectRoot={fileTreeRoot}
-              onResultClick={(filePath, lineNumber) => {
-                navigateToFile(filePath)
-                setTimeout(() => document.dispatchEvent(new CustomEvent('acc:editor-go-to-line', { detail: { filePath, lineNumber } })), 100)
-              }}
+              activeFilePath={activeFilePath}
+              onFileClick={(path) => navigateToFile(path)}
+              refreshTick={fileRefreshTick}
             />
-          ) : fileTreeRoot ? (
-            <>
-              <div className="flex-shrink-0 px-2 py-1.5 border-b border-brand-panel/40">
-                <div className="flex items-center gap-1.5 px-2 py-1 bg-brand-panel/40 border border-brand-panel/60 rounded">
-                  <Search size={11} className="text-zinc-600 flex-shrink-0" />
-                  <input
-                    value={fileSearch}
-                    onChange={(e) => setFileSearch(e.target.value)}
-                    placeholder="Search files…"
-                    className="flex-1 bg-transparent text-[11px] text-zinc-300 placeholder:text-zinc-600 outline-none min-w-0"
-                  />
-                  {fileSearch && (
-                    <button onClick={() => setFileSearch('')} className="text-zinc-600 hover:text-zinc-400 flex-shrink-0">
-                      <X size={10} />
-                    </button>
-                  )}
-                </div>
-              </div>
-              <FileTree
-                projectRoot={fileTreeRoot}
-                activeFilePath={activeFilePath}
-                onFileClick={(path) => navigateToFile(path)}
-                refreshTick={fileRefreshTick}
-                filterText={fileSearch}
-              />
-            </>
           ) : (
             <div className="flex flex-col items-center gap-3 px-4 py-10">
               <FolderOpen size={28} className="text-zinc-700" />
