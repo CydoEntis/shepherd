@@ -179,9 +179,10 @@ interface TreeNodeProps {
   extDropDir: string | null
   onExternalDragOver: (dirPath: string) => void
   onExternalDrop: (dirPath: string, files: File[]) => void
+  onInternalDrop: (srcPath: string, destDir: string) => void
 }
 
-function TreeNode({ entry, depth, gitMap, projectRoot, activeFilePath, focusedPath, renamingPath, creating, creatingValue, expanded, childrenMap, onFileClick, onContextMenu, onRenameSubmit, onRenameCancel, onToggle, onQuickNew, onLoadChildren, onSetFocus, onCreatingChange, onCreateSubmit, onCreateCancel, extDropDir, onExternalDragOver, onExternalDrop }: TreeNodeProps): JSX.Element {
+function TreeNode({ entry, depth, gitMap, projectRoot, activeFilePath, focusedPath, renamingPath, creating, creatingValue, expanded, childrenMap, onFileClick, onContextMenu, onRenameSubmit, onRenameCancel, onToggle, onQuickNew, onLoadChildren, onSetFocus, onCreatingChange, onCreateSubmit, onCreateCancel, extDropDir, onExternalDragOver, onExternalDrop, onInternalDrop }: TreeNodeProps): JSX.Element {
   const [renameValue, setRenameValue] = useState(entry.name)
   const inputRef = useRef<HTMLInputElement>(null)
   const { startDrag, endDrag } = useLayoutDnd()
@@ -230,7 +231,7 @@ function TreeNode({ entry, depth, gitMap, projectRoot, activeFilePath, focusedPa
   const isActive = !entry.isDirectory && activeFilePath !== null &&
     norm(entry.path) === norm(activeFilePath)
 
-  const childProps = { gitMap, projectRoot, activeFilePath, focusedPath, renamingPath, creating, creatingValue, expanded, childrenMap, onFileClick, onContextMenu, onRenameSubmit, onRenameCancel, onToggle, onQuickNew, onLoadChildren, onSetFocus, onCreatingChange, onCreateSubmit, onCreateCancel, extDropDir, onExternalDragOver, onExternalDrop }
+  const childProps = { gitMap, projectRoot, activeFilePath, focusedPath, renamingPath, creating, creatingValue, expanded, childrenMap, onFileClick, onContextMenu, onRenameSubmit, onRenameCancel, onToggle, onQuickNew, onLoadChildren, onSetFocus, onCreatingChange, onCreateSubmit, onCreateCancel, extDropDir, onExternalDragOver, onExternalDrop, onInternalDrop }
 
   return (
     <>
@@ -246,13 +247,20 @@ function TreeNode({ entry, depth, gitMap, projectRoot, activeFilePath, focusedPa
         } : undefined}
         onDragEnd={!entry.isDirectory ? () => endDrag() : undefined}
         onDragOver={entry.isDirectory ? (e) => {
-          if (!e.dataTransfer.types.includes('Files')) return
+          const hasOrbitFile = e.dataTransfer.types.includes('application/orbit-file')
+          const hasOsFiles = e.dataTransfer.types.includes('Files')
+          if (!hasOrbitFile && !hasOsFiles) return
           e.preventDefault(); e.stopPropagation()
           onExternalDragOver(norm(entry.path))
         } : undefined}
         onDrop={entry.isDirectory ? (e) => {
-          if (!e.dataTransfer.types.includes('Files')) return
           e.preventDefault(); e.stopPropagation()
+          const orbitSrc = e.dataTransfer.getData('application/orbit-file')
+          if (orbitSrc) {
+            onInternalDrop(orbitSrc, norm(entry.path))
+            return
+          }
+          if (!e.dataTransfer.types.includes('Files')) return
           onExternalDrop(norm(entry.path), Array.from(e.dataTransfer.files))
         } : undefined}
         className={cn(
@@ -633,6 +641,26 @@ export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileC
     await loadRoot()
   }, [loadRoot])
 
+  const handleInternalDrop = useCallback(async (srcPath: string, destDir: string): Promise<void> => {
+    setExtDropDir(null)
+    const srcNorm = norm(srcPath)
+    const destNorm = norm(destDir)
+    // Don't move onto itself
+    if (srcNorm === destNorm) return
+    // Don't move into current parent (already there)
+    const parentDir = srcNorm.substring(0, srcNorm.lastIndexOf('/'))
+    if (parentDir === destNorm) return
+    // Don't move a folder into its own descendant
+    if (destNorm.startsWith(srcNorm + '/')) return
+    const name = srcNorm.split('/').pop() ?? ''
+    const destPath = destNorm + '/' + name
+    try {
+      await copyFile(srcPath, destPath)
+      await trashEntry(srcPath)
+      await loadRoot()
+    } catch {}
+  }, [loadRoot])
+
   useEffect(() => {
     const handler = (e: Event): void => {
       const { parentDir, type } = (e as CustomEvent<{ parentDir: string; type: 'file' | 'folder' }>).detail
@@ -695,16 +723,24 @@ export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileC
     )
   }
 
-  const nodeProps = { gitMap, projectRoot, activeFilePath, focusedPath, renamingPath, creating, creatingValue, expanded, childrenMap, onFileClick, onContextMenu: handleContextMenu, onRenameSubmit: handleRenameSubmit, onRenameCancel: () => setRenamingPath(null), onToggle: handleToggle, onQuickNew: handleQuickNew, onLoadChildren: loadChildren, onSetFocus: setFocusedPath, onCreatingChange: setCreatingValue, onCreateSubmit: handleCreateConfirm, onCreateCancel: () => { setCreating(null); setCreatingValue('') }, extDropDir, onExternalDragOver: setExtDropDir, onExternalDrop: handleExternalDrop }
+  const nodeProps = { gitMap, projectRoot, activeFilePath, focusedPath, renamingPath, creating, creatingValue, expanded, childrenMap, onFileClick, onContextMenu: handleContextMenu, onRenameSubmit: handleRenameSubmit, onRenameCancel: () => setRenamingPath(null), onToggle: handleToggle, onQuickNew: handleQuickNew, onLoadChildren: loadChildren, onSetFocus: setFocusedPath, onCreatingChange: setCreatingValue, onCreateSubmit: handleCreateConfirm, onCreateCancel: () => { setCreating(null); setCreatingValue('') }, extDropDir, onExternalDragOver: setExtDropDir, onExternalDrop: handleExternalDrop, onInternalDrop: handleInternalDrop }
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
       <div
         ref={treeBodyRef}
         className="flex-1 overflow-y-auto py-1 px-1"
-        onDragOver={(e) => { if (e.dataTransfer.types.includes('Files')) e.preventDefault() }}
+        onDragOver={(e) => {
+          if (e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes('application/orbit-file')) e.preventDefault()
+        }}
         onDragLeave={(e) => { if (!treeBodyRef.current?.contains(e.relatedTarget as Node)) setExtDropDir(null) }}
         onDrop={(e) => {
+          const orbitSrc = e.dataTransfer.getData('application/orbit-file')
+          if (orbitSrc) {
+            e.preventDefault()
+            void handleInternalDrop(orbitSrc, projectRoot)
+            return
+          }
           if (!e.dataTransfer.types.includes('Files')) return
           e.preventDefault()
           void handleExternalDrop(projectRoot, Array.from(e.dataTransfer.files))
