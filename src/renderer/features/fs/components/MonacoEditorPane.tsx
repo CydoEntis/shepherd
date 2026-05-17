@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import Editor from '@monaco-editor/react'
-import type { OnMount } from '@monaco-editor/react'
+import type { OnMount, BeforeMount } from '@monaco-editor/react'
 import { Save, ChevronRight } from 'lucide-react'
 import { readFile, writeFile, showInFolder, openInEditor } from '../fs.service'
 import { useInstalledEditors } from '../hooks/useInstalledEditors'
@@ -26,6 +26,7 @@ import SolarizedLightTheme from '../../../assets/monaco-themes/solarized-light.j
 
 type EditorInstance = Parameters<OnMount>[0]
 type MonacoInstance = Parameters<OnMount>[1]
+type BeforeMountMonaco = Parameters<BeforeMount>[0]
 
 function extToLang(filePath: string): string {
   const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
@@ -166,6 +167,8 @@ const APP_THEME_EDITOR_BG: Record<string, { bg: string; lineHighlight: string; g
   aurora: { bg: '#040c0e', lineHighlight: '#0a181c50', gutter: '#040c0e' },
   mars:   { bg: '#100805', lineHighlight: '#1e110850', gutter: '#100805' },
   pulsar: { bg: '#040814', lineHighlight: '#0a102250', gutter: '#040814' },
+  cosmos: { bg: '#200020', lineHighlight: '#380038', gutter: '#200020' },
+  void:   { bg: '#161616', lineHighlight: '#222222', gutter: '#161616' },
   system: { bg: '#0f1117', lineHighlight: '#1a1d2480', gutter: '#0f1117' },
 }
 
@@ -186,7 +189,7 @@ function buildAdaptedTheme(baseId: string, appTheme: string): ThemeData | null {
   }
 }
 
-function defineCustomThemes(monaco: MonacoInstance): void {
+function defineCustomThemes(monaco: MonacoInstance | BeforeMountMonaco): void {
   Object.entries(ALL_THEME_DATA).forEach(([id, data]) => {
     if (id !== 'vs' && id !== 'vs-dark') monaco.editor.defineTheme(id, data)
   })
@@ -268,11 +271,13 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
       case 'light':  return 'vs'
       case 'dark':   return 'github-dark'
       case 'space':  return 'dracula'
-      case 'nebula': return 'amy'
-      case 'solar':  return 'monokai'
-      case 'aurora': return 'github-dark'
+      case 'nebula': return 'oceanic-next'
+      case 'solar':  return 'upstream-sunburst'
+      case 'aurora': return 'night-owl'
       case 'mars':   return 'birds-of-paradise'
-      case 'pulsar': return 'blackboard'
+      case 'pulsar': return 'cobalt2'
+      case 'cosmos': return 'amy'
+      case 'void':   return 'merbivore-soft'
       default:       return 'vs-dark'
     }
   })()
@@ -391,15 +396,17 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
             value={content}
             language={extToLang(currentPath)}
             theme="orbit-auto"
+            beforeMount={(monaco) => {
+              monacoRef.current = monaco
+              defineCustomThemes(monaco)
+              // Define orbit-auto before the editor first renders so no vs-dark flash occurs
+              const adapted = buildAdaptedTheme(autoTheme, theme ?? 'space')
+              if (adapted) monaco.editor.defineTheme('orbit-auto', adapted)
+            }}
             onMount={(editor, monaco) => {
               editorRef.current = editor
               monacoRef.current = monaco
-              defineCustomThemes(monaco)
-              // Build orbit-auto immediately so it's ready when the editor first renders
-              const adapted = buildAdaptedTheme(autoTheme, theme ?? 'space')
-              if (adapted) monaco.editor.defineTheme('orbit-auto', adapted)
               // Disable semantic validation — Monaco has no tsconfig/node_modules context
-              // so module-not-found and type errors are always false positives here
               monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
                 noSemanticValidation: true,
                 noSyntaxValidation: false,

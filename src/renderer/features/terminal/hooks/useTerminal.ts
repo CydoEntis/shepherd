@@ -53,7 +53,7 @@ export interface TerminalCtxMenu {
 }
 
 const DARK_TERMINAL_THEME = {
-  background: '#0f1117', foreground: '#fafafa', cursor: '#fafafa',
+  background: '#131720', foreground: '#fafafa', cursor: '#fafafa',
   black: '#18181b', brightBlack: '#3f3f46',
   red: '#ef4444', brightRed: '#f87171',
   green: '#22c55e', brightGreen: '#4ade80',
@@ -65,7 +65,7 @@ const DARK_TERMINAL_THEME = {
 }
 
 const LIGHT_TERMINAL_THEME = {
-  background: '#f5f2e8', foreground: '#1c1c1c', cursor: '#4a4a4a',
+  background: '#faf6ee', foreground: '#1c1c1c', cursor: '#4a4a4a',
   black: '#000000', brightBlack: '#767676',
   red: '#cd3131', brightRed: '#f14c4c',
   green: '#117700', brightGreen: '#23d18b',
@@ -77,8 +77,8 @@ const LIGHT_TERMINAL_THEME = {
 }
 
 const SPACE_TERMINAL_THEME = {
-  background: '#090616', foreground: '#e8e0ff', cursor: '#bf8cff',
-  black: '#0d0a26', brightBlack: '#2a2050',
+  background: '#0f0b24', foreground: '#e8e0ff', cursor: '#bf8cff',
+  black: '#0f0b24', brightBlack: '#2a2050',
   red: '#ff6b8a', brightRed: '#ff9aad',
   green: '#78ffd6', brightGreen: '#a0ffe6',
   yellow: '#ffd166', brightYellow: '#ffe299',
@@ -149,7 +149,7 @@ const MONOKAI_TERMINAL_THEME = {
 }
 
 const NEBULA_TERMINAL_THEME = {
-  background: '#080514', foreground: '#c8f0ff', cursor: '#64dcff',
+  background: '#0c0920', foreground: '#c8f0ff', cursor: '#64dcff',
   black: '#0c0920', brightBlack: '#1a1240',
   red: '#ff6b8a', brightRed: '#ff9aad',
   green: '#64ffda', brightGreen: '#96ffe8',
@@ -161,8 +161,8 @@ const NEBULA_TERMINAL_THEME = {
 }
 
 const SOLAR_TERMINAL_THEME = {
-  background: '#0c0804', foreground: '#fff0d0', cursor: '#ffb900',
-  black: '#1a1008', brightBlack: '#3d2a10',
+  background: '#120c06', foreground: '#fff0d0', cursor: '#ffb900',
+  black: '#120c06', brightBlack: '#3d2a10',
   red: '#ff6b47', brightRed: '#ff8c6a',
   green: '#a8e063', brightGreen: '#c4f07d',
   yellow: '#ffb900', brightYellow: '#ffd040',
@@ -173,8 +173,8 @@ const SOLAR_TERMINAL_THEME = {
 }
 
 const AURORA_TERMINAL_THEME = {
-  background: '#040c0e', foreground: '#d0fff0', cursor: '#00e6a0',
-  black: '#061a1e', brightBlack: '#0a2830',
+  background: '#061216', foreground: '#d0fff0', cursor: '#00e6a0',
+  black: '#061216', brightBlack: '#0a2830',
   red: '#ff6b8a', brightRed: '#ff9aad',
   green: '#00e6a0', brightGreen: '#40ffc0',
   yellow: '#ffe566', brightYellow: '#fff0a0',
@@ -185,8 +185,8 @@ const AURORA_TERMINAL_THEME = {
 }
 
 const MARS_TERMINAL_THEME = {
-  background: '#100804', foreground: '#ffe8d0', cursor: '#ff6929',
-  black: '#1a0c06', brightBlack: '#3d1c0e',
+  background: '#1a0c07', foreground: '#ffe8d0', cursor: '#ff6929',
+  black: '#1a0c07', brightBlack: '#3d1c0e',
   red: '#ff4a2a', brightRed: '#ff7055',
   green: '#a8d080', brightGreen: '#c8f080',
   yellow: '#ffb040', brightYellow: '#ffd060',
@@ -197,8 +197,8 @@ const MARS_TERMINAL_THEME = {
 }
 
 const PULSAR_TERMINAL_THEME = {
-  background: '#04080e', foreground: '#c8f0ff', cursor: '#00d7ff',
-  black: '#060e1c', brightBlack: '#0e1e3a',
+  background: '#060e20', foreground: '#c8f0ff', cursor: '#00d7ff',
+  black: '#060e20', brightBlack: '#0e1e3a',
   red: '#ff6b8a', brightRed: '#ff9aad',
   green: '#60ffb8', brightGreen: '#90ffd0',
   yellow: '#ffe066', brightYellow: '#fff090',
@@ -224,15 +224,46 @@ export const TERMINAL_THEME_LIST: { id: string; label: string }[] = [
   { id: 'monokai', label: 'Monokai' },
 ]
 
+const COSMOS_TERMINAL_THEME = {
+  background: '#2c0834', foreground: '#e0c8ff', cursor: '#c89bff',
+  black: '#2c0834', brightBlack: '#500050',
+  red: '#ff6b8a', brightRed: '#ff9aad',
+  green: '#78ffd6', brightGreen: '#a0ffe6',
+  yellow: '#ffd166', brightYellow: '#ffe299',
+  blue: '#c0aaff', brightBlue: '#d8c8ff',
+  magenta: '#c89bff', brightMagenta: '#ddc0ff',
+  cyan: '#e088ff', brightCyan: '#eeb0ff',
+  white: '#d8c0f0', brightWhite: '#f0e4ff',
+}
+
+const VOID_TERMINAL_THEME = {
+  background: '#0e0e0e', foreground: '#d0d0d0', cursor: '#c0c0c0',
+  black: '#0e0e0e', brightBlack: '#3a3a3a',
+  red: '#cc4444', brightRed: '#ee6666',
+  green: '#44aa44', brightGreen: '#66cc66',
+  yellow: '#aaaa44', brightYellow: '#cccc66',
+  blue: '#4466cc', brightBlue: '#6688ee',
+  magenta: '#aa44aa', brightMagenta: '#cc66cc',
+  cyan: '#44aaaa', brightCyan: '#66cccc',
+  white: '#d0d0d0', brightWhite: '#f0f0f0',
+}
+
 function resolveTerminalTheme(appTheme: string): typeof DARK_TERMINAL_THEME {
-  if (appTheme === 'space')  return SPACE_TERMINAL_THEME
-  if (appTheme === 'nebula') return NEBULA_TERMINAL_THEME
-  if (appTheme === 'solar')  return SOLAR_TERMINAL_THEME
-  if (appTheme === 'aurora') return AURORA_TERMINAL_THEME
-  if (appTheme === 'mars')   return MARS_TERMINAL_THEME
-  if (appTheme === 'pulsar') return PULSAR_TERMINAL_THEME
-  const isDark = appTheme === 'dark' || (appTheme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
-  return isDark ? DARK_TERMINAL_THEME : LIGHT_TERMINAL_THEME
+  switch (appTheme) {
+    case 'space':  return SPACE_TERMINAL_THEME
+    case 'nebula': return NEBULA_TERMINAL_THEME
+    case 'solar':  return SOLAR_TERMINAL_THEME
+    case 'aurora': return AURORA_TERMINAL_THEME
+    case 'mars':   return MARS_TERMINAL_THEME
+    case 'pulsar': return PULSAR_TERMINAL_THEME
+    case 'cosmos': return COSMOS_TERMINAL_THEME
+    case 'void':   return VOID_TERMINAL_THEME
+    case 'light':  return LIGHT_TERMINAL_THEME
+    default: {
+      const isDark = appTheme === 'dark' || (appTheme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+      return isDark ? DARK_TERMINAL_THEME : LIGHT_TERMINAL_THEME
+    }
+  }
 }
 
 function getThemeById(id: string, appTheme: string): typeof DARK_TERMINAL_THEME {

@@ -210,6 +210,62 @@
     --brand-muted: 0 150 190;
   }
 
+  /* Cosmos theme — deep wine-magenta, pairs with Amy editor (#200020 bg) */
+  .cosmos {
+    --background: 300 100% 6%;
+    --foreground: 290 70% 92%;
+    --card: 300 90% 9%;
+    --card-foreground: 290 70% 92%;
+    --popover: 300 90% 9%;
+    --popover-foreground: 290 70% 92%;
+    --primary: 285 70% 72%;
+    --primary-foreground: 300 100% 6%;
+    --secondary: 300 70% 16%;
+    --secondary-foreground: 290 70% 92%;
+    --muted: 300 70% 16%;
+    --muted-foreground: 290 30% 60%;
+    --accent: 300 70% 16%;
+    --accent-foreground: 290 70% 92%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 300 60% 20%;
+    --input: 300 70% 16%;
+    --ring: 285 70% 72%;
+    --brand-bg: 32 0 32;
+    --brand-surface: 44 8 52;
+    --brand-panel: 76 20 88;
+    --brand-accent: 200 155 255;
+    --brand-muted: 145 100 200;
+  }
+
+  /* Void theme — pure black, neutral silver — pairs with Merbivore editor */
+  .void {
+    --background: 0 0% 2%;
+    --foreground: 0 0% 90%;
+    --card: 0 0% 4%;
+    --card-foreground: 0 0% 90%;
+    --popover: 0 0% 4%;
+    --popover-foreground: 0 0% 90%;
+    --primary: 0 0% 82%;
+    --primary-foreground: 0 0% 2%;
+    --secondary: 0 0% 8%;
+    --secondary-foreground: 0 0% 90%;
+    --muted: 0 0% 8%;
+    --muted-foreground: 0 0% 50%;
+    --accent: 0 0% 8%;
+    --accent-foreground: 0 0% 90%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 12%;
+    --input: 0 0% 8%;
+    --ring: 0 0% 70%;
+    --brand-bg: 0 0 0;
+    --brand-surface: 14 14 14;
+    --brand-panel: 32 32 32;
+    --brand-accent: 200 200 200;
+    --brand-muted: 120 120 120;
+  }
+
   /* Space theme — dark purple / nebula variant */
   .space {
     --background: 258 44% 7%;
@@ -323,6 +379,16 @@
 .aurora *::-webkit-scrollbar-thumb { background: #0c2830; }
 .aurora *::-webkit-scrollbar-thumb:hover { background: #143a48; }
 
+/* Scrollbars — cosmos */
+.cosmos * { scrollbar-color: #3a003a transparent; }
+.cosmos *::-webkit-scrollbar-thumb { background: #560056; }
+.cosmos *::-webkit-scrollbar-thumb:hover { background: #720072; }
+
+/* Scrollbars — void */
+.void * { scrollbar-color: #202020 transparent; }
+.void *::-webkit-scrollbar-thumb { background: #303030; }
+.void *::-webkit-scrollbar-thumb:hover { background: #424242; }
+
 /* Text selection color — brand-accent at low opacity */
 ::selection {
   background-color: rgba(228, 228, 231, 0.12);
@@ -333,6 +399,8 @@
 .nebula ::selection { background-color: rgba(100, 220, 255, 0.15); }
 .solar  ::selection { background-color: rgba(255, 185,   0, 0.13); }
 .aurora ::selection { background-color: rgba(  0, 230, 160, 0.13); }
+.cosmos ::selection { background-color: rgba(196, 158, 255, 0.15); }
+.void   ::selection { background-color: rgba(200, 200, 200, 0.10); }
 
 /* Focus ring — per theme accent color */
 .mars   :focus-visible { outline-color: rgba(255, 105,  45, 0.45); }
@@ -340,6 +408,8 @@
 .nebula :focus-visible { outline-color: rgba(100, 220, 255, 0.45); }
 .solar  :focus-visible { outline-color: rgba(255, 185,   0, 0.40); }
 .aurora :focus-visible { outline-color: rgba(  0, 230, 160, 0.40); }
+.cosmos :focus-visible { outline-color: rgba(196, 158, 255, 0.45); }
+.void   :focus-visible { outline-color: rgba(200, 200, 200, 0.30); }
 
 /* shiki syntax highlighting */
 .shiki-wrap {

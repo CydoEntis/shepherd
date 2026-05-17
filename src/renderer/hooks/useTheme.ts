@@ -1,9 +1,9 @@
-import { useEffect } from 'react'
+import { useLayoutEffect } from 'react'
 
-const EXTRA_THEMES = ['space', 'nebula', 'solar', 'aurora', 'mars', 'pulsar'] as const
+const EXTRA_THEMES = ['space', 'nebula', 'solar', 'aurora', 'mars', 'pulsar', 'cosmos', 'void'] as const
 
 export function useTheme(appTheme: string): void {
-  useEffect(() => {
+  useLayoutEffect(() => {
     const html = document.documentElement
     const applyTheme = (): void => {
       const isDark =

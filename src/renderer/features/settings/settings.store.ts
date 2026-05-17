@@ -25,7 +25,7 @@ export interface SettingsSlice {
   setNoteWorkspace: (noteId: string, workspaceId: string | null) => Promise<void>
 }
 
-const VALID_THEMES = new Set(['system', 'light', 'dark', 'space', 'nebula', 'solar', 'aurora', 'mars', 'pulsar'])
+const VALID_THEMES = new Set(['system', 'light', 'dark', 'space', 'nebula', 'solar', 'aurora', 'mars', 'pulsar', 'cosmos', 'void'])
 const storedTheme = localStorage.getItem('orbit-theme')
 const initialTheme = (storedTheme && VALID_THEMES.has(storedTheme) ? storedTheme : null) as AppSettings['theme'] | null
 

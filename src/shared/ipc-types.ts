@@ -233,7 +233,7 @@ export const AppSettingsSchema = z.object({
   fontFamily: z.string().default("'Cascadia Code', 'JetBrains Mono', monospace"),
   uiFontSize: z.number().int().min(10).max(24).default(14),
   editorFontSize: z.number().int().min(8).max(32).default(13),
-  theme: z.enum(['system', 'light', 'dark', 'space', 'nebula', 'solar', 'aurora', 'mars', 'pulsar']).default('space'),
+  theme: z.enum(['system', 'light', 'dark', 'space', 'nebula', 'solar', 'aurora', 'mars', 'pulsar', 'cosmos', 'void']).default('space'),
   fileViewerTheme: z.string().default('vitesse-dark'),
   scrollbackLines: z.number().int().min(100).max(100000).default(10000),
   presets: z.array(PresetSchema).default([]),
