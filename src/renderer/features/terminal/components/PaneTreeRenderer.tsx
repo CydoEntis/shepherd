@@ -51,7 +51,7 @@ export function PaneTreeRenderer({ node, tabId, onContextMenu, forceMainWindow, 
     if (node.panel === 'home') {
       return (
         <PaneDropTarget leafId={node.id} tabId={tabId}>
-          <div className="relative w-full h-full">
+          <div className="relative w-full h-full rounded-xl overflow-hidden bg-brand-surface">
             <WorkspaceDashboard />
           </div>
         </PaneDropTarget>
@@ -64,7 +64,7 @@ export function PaneTreeRenderer({ node, tabId, onContextMenu, forceMainWindow, 
       return (
         <PaneDropTarget leafId={node.id} tabId={tabId}>
           <div
-            className="relative flex flex-col w-full h-full bg-brand-surface"
+            className="relative flex flex-col w-full h-full rounded-xl bg-brand-surface overflow-hidden"
             onMouseDownCapture={() => setFocusedLeaf(node.id)}
             onContextMenu={(e) => { e.preventDefault(); setNoteCtxMenu({ x: e.clientX, y: e.clientY, noteId: node.noteId ?? '', panel: 'notes', leafId: node.id }) }}
           >
@@ -96,7 +96,7 @@ export function PaneTreeRenderer({ node, tabId, onContextMenu, forceMainWindow, 
       return (
         <PaneDropTarget leafId={node.id} tabId={tabId}>
           <div
-            className="relative w-full h-full"
+            className="relative w-full h-full rounded-xl overflow-hidden bg-brand-surface"
             onMouseDownCapture={() => {
               setFocusedLeaf(node.id)
               document.dispatchEvent(new CustomEvent('acc:note-active-changed', { detail: { noteId: node.noteId, tabId } }))
@@ -134,7 +134,7 @@ export function PaneTreeRenderer({ node, tabId, onContextMenu, forceMainWindow, 
       const isFileFocused = rootIsASplit && node.id === focusedLeafId
       return (
         <PaneDropTarget leafId={node.id} tabId={tabId}>
-          <div key={node.id} className="relative w-full h-full" onMouseDownCapture={() => setFocusedLeaf(node.id)}>
+          <div key={node.id} className="relative w-full h-full rounded-xl overflow-hidden bg-brand-surface" onMouseDownCapture={() => setFocusedLeaf(node.id)}>
             <MonacoEditorPane filePath={node.filePath} tabId={tabId} leafId={node.id} />
             {isFileFocused && (
               <div className="absolute inset-0 pointer-events-none" style={{ boxShadow: 'inset 0 0 0 2px rgb(var(--brand-accent)), inset 0 3px 0 0 rgb(var(--brand-accent))' }} />
@@ -205,7 +205,7 @@ export function PaneTreeRenderer({ node, tabId, onContextMenu, forceMainWindow, 
     return (
       <PaneDropTarget leafId={node.id} tabId={tabId}>
         <div
-          className="relative flex flex-col w-full h-full"
+          className="relative flex flex-col w-full h-full rounded-xl overflow-hidden"
           onMouseDownCapture={() => {
             setFocusedSession(sid)
             document.dispatchEvent(new CustomEvent('acc:terminal-pane-focused'))
@@ -214,7 +214,7 @@ export function PaneTreeRenderer({ node, tabId, onContextMenu, forceMainWindow, 
           <TerminalPane sessionId={sid} paneItems={paneItems} />
           {isFocused && (
             <div
-              className="absolute inset-0 pointer-events-none rounded"
+              className="absolute inset-0 pointer-events-none rounded-xl"
               style={{ boxShadow: `inset 0 0 0 2px ${sessionColor}, inset 0 3px 0 0 ${sessionColor}` }}
             />
           )}
@@ -225,15 +225,15 @@ export function PaneTreeRenderer({ node, tabId, onContextMenu, forceMainWindow, 
 
   const handleClass =
     node.direction === 'vertical'
-      ? 'h-1.5 bg-brand-bg hover:bg-brand-accent transition-colors cursor-row-resize flex-shrink-0'
-      : 'w-1.5 bg-brand-bg hover:bg-brand-accent transition-colors cursor-col-resize flex-shrink-0'
+      ? 'h-2 bg-brand-bg hover:bg-brand-accent/40 transition-colors cursor-row-resize flex-shrink-0'
+      : 'w-2 bg-brand-bg hover:bg-brand-accent/40 transition-colors cursor-col-resize flex-shrink-0'
 
   return (
-    <PanelGroup orientation={node.direction} className="w-full h-full p-1 gap-0">
+    <PanelGroup orientation={node.direction} className="w-full h-full gap-0">
       {node.children.map((child, idx) => [
         idx > 0 && <PanelResizeHandle key={`handle-${node.id}-${idx}`} className={handleClass} />,
         <Panel key={child.id} defaultSize={Math.floor(100 / node.children.length)} minSize={10}>
-          <div className={node.direction === 'vertical' ? 'w-full h-full py-0.5' : 'w-full h-full px-0.5'}>
+          <div className="w-full h-full">
             <PaneTreeRenderer
               node={child}
               tabId={tabId}

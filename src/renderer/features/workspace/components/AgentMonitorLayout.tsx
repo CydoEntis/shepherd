@@ -22,15 +22,19 @@ export function AgentMonitorLayout({ sessionId, onSessionClose }: Props): JSX.El
 
   if (!paneTree) return (
     <div className="relative w-full h-full">
-      <WorkspaceDashboard />
+      <div className="w-full h-full bg-brand-surface">
+        <WorkspaceDashboard />
+      </div>
     </div>
   )
 
   return (
-    <PaneTreeRenderer
-      node={paneTree}
-      tabId={sessionId}
-      onCloseLastPane={handleCloseLastPane}
-    />
+    <div className="w-full h-full">
+      <PaneTreeRenderer
+        node={paneTree}
+        tabId={sessionId}
+        onCloseLastPane={handleCloseLastPane}
+      />
+    </div>
   )
 }

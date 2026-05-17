@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { Toaster, toast } from 'sonner'
-import { Settings, HelpCircle } from 'lucide-react'
+import { Settings, HelpCircle, Plus } from 'lucide-react'
 import { marked } from 'marked'
 import { createPortal } from 'react-dom'
 import { useTheme } from './hooks/useTheme'
@@ -370,23 +370,36 @@ export function App(): JSX.Element {
 
         {/* Main content */}
         <div className="flex-1 min-w-0 min-h-0 flex relative">
-          {/* Terminal area */}
-          <div className="flex-1 min-w-0 min-h-0 flex flex-col">
-            <SessionDock
-              activeSessionId={workspaceSessionId}
-              onSelectSession={setWorkspaceSessionId}
-            />
-            <div className="flex-1 min-h-0 relative">
-            <ErrorBoundary>
-            <AgentMonitorLayout
-              sessionId={
-                workspaceSessionId && (sessions[workspaceSessionId] || workspaceSessionId === '__root__')
-                  ? workspaceSessionId
-                  : '__root__'
-              }
-              onSessionClose={() => setWorkspaceSessionId('__root__')}
-            />
-            </ErrorBoundary>
+          <div className="flex-1 min-w-0 min-h-0 flex flex-col p-2 gap-2">
+            {/* Top row: floating tab card + Terminal button — split from one piece */}
+            <div className="flex-shrink-0 flex items-stretch gap-[3px]">
+              <div className="flex-1 min-w-0 rounded-l-xl border border-r-0 border-brand-panel/60 bg-brand-surface shadow-sm overflow-hidden">
+                <SessionDock
+                  activeSessionId={workspaceSessionId}
+                  onSelectSession={setWorkspaceSessionId}
+                  showAddButton={false}
+                />
+              </div>
+              <button
+                onClick={() => document.dispatchEvent(new CustomEvent('acc:new-session'))}
+                className="flex-shrink-0 flex items-center gap-1.5 px-3 rounded-r-xl text-zinc-300 hover:text-zinc-100 bg-brand-surface hover:bg-brand-panel border border-l-0 border-brand-panel/60 shadow-sm transition-all text-xs font-medium"
+              >
+                <Plus size={12} />
+                <span>Terminal</span>
+              </button>
+            </div>
+            {/* Floating content card — pane area fills edge to edge */}
+            <div className="flex-1 min-h-0 rounded-xl border border-brand-panel/60 bg-brand-surface shadow-md overflow-hidden">
+              <ErrorBoundary>
+              <AgentMonitorLayout
+                sessionId={
+                  workspaceSessionId && (sessions[workspaceSessionId] || workspaceSessionId === '__root__')
+                    ? workspaceSessionId
+                    : '__root__'
+                }
+                onSessionClose={() => setWorkspaceSessionId('__root__')}
+              />
+              </ErrorBoundary>
             </div>
           </div>
 
@@ -426,7 +439,7 @@ export function App(): JSX.Element {
           <button
             onClick={() => setSidePanel(p => p === 'settings' ? null : 'settings')}
             title="Settings"
-            className={cn('flex items-center gap-1.5 px-2.5 h-7 rounded transition-colors', sidePanel === 'settings' ? 'text-brand-muted bg-brand-panel' : 'text-zinc-500 hover:text-zinc-300')}
+            className={cn('flex items-center gap-1.5 px-2.5 h-7 rounded-lg border transition-all', sidePanel === 'settings' ? 'text-brand-accent bg-brand-panel border-brand-panel' : 'text-zinc-500 hover:text-zinc-300 border-transparent hover:border-brand-panel/60 hover:bg-brand-panel/40')}
           >
             <Settings size={15} />
             <span className="text-[11px] font-medium">Settings</span>

@@ -14,6 +14,7 @@ import { WindowMoveSubmenu } from '../../window/components/WindowMoveSubmenu'
 interface Props {
   activeSessionId: string | null
   onSelectSession: (id: string) => void
+  showAddButton?: boolean
 }
 
 interface CtxMenu {
@@ -21,7 +22,7 @@ interface CtxMenu {
   pos: { x: number; y: number }
 }
 
-export function SessionDock({ activeSessionId, onSelectSession }: Props): JSX.Element {
+export function SessionDock({ activeSessionId, onSelectSession, showAddButton = true }: Props): JSX.Element {
   const tabOrder = useStore((s) => s.tabOrder)
   const sessions = useStore((s) => s.sessions)
   const workspaces = useStore((s) => s.workspaces)
@@ -195,7 +196,7 @@ export function SessionDock({ activeSessionId, onSelectSession }: Props): JSX.El
   }
 
   return (
-    <div className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-brand-bg border-b border-brand-panel/40 overflow-x-auto scrollbar-none">
+    <div className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-transparent overflow-x-auto scrollbar-none w-full min-h-[40px]">
       {sessionTabs.map((tabId) => {
         const meta = sessions[tabId]
         const isActive = (focusedSessionId ?? activeSessionId) === tabId
@@ -220,7 +221,7 @@ export function SessionDock({ activeSessionId, onSelectSession }: Props): JSX.El
             onDoubleClick={(e) => { e.stopPropagation(); openEdit(tabId) }}
             onContextMenu={(e) => openCtxMenu(e, tabId)}
             className={cn(
-              'group flex items-center gap-1.5 px-2.5 py-1 rounded-md border shadow-sm cursor-pointer transition-all flex-shrink-0 select-none',
+              'group flex items-center gap-1.5 px-2.5 py-1 rounded-lg border shadow-sm cursor-pointer transition-all flex-shrink-0 select-none',
               isActive ? 'text-zinc-100' : 'text-zinc-400 hover:text-zinc-200',
               !isActive && !isOver && 'opacity-50 hover:opacity-75',
               isOver && 'opacity-100 border-brand-accent/70',
@@ -229,8 +230,8 @@ export function SessionDock({ activeSessionId, onSelectSession }: Props): JSX.El
             style={{
               background: isOver
                 ? undefined
-                : `linear-gradient(to right, ${color}${isActive ? '55' : '20'}, transparent)`,
-              ...(!isOver && { borderColor: isActive ? color : `${color}55` })
+                : `linear-gradient(to right, ${color}${isActive ? '22' : '0f'}, transparent)`,
+              ...(!isOver && { borderColor: isActive ? `${color}99` : `${color}33` })
             }}
           >
             <GripVertical size={10} className="text-zinc-700 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity -ml-0.5" />
@@ -258,13 +259,15 @@ export function SessionDock({ activeSessionId, onSelectSession }: Props): JSX.El
         )
       })}
 
-      <button
-        onClick={() => document.dispatchEvent(new CustomEvent('acc:new-session'))}
-        className="ml-auto flex-shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-md text-zinc-400 hover:text-zinc-100 bg-brand-panel/50 hover:bg-brand-panel/80 border border-brand-panel shadow-sm transition-colors text-xs"
-      >
-        <Plus size={12} />
-        <span>Terminal</span>
-      </button>
+      {showAddButton && (
+        <button
+          onClick={() => document.dispatchEvent(new CustomEvent('acc:new-session'))}
+          className="ml-auto flex-shrink-0 flex items-center gap-1.5 px-3 py-1 rounded-lg text-zinc-300 hover:text-zinc-100 bg-brand-surface hover:bg-brand-panel border border-brand-panel/60 shadow-sm transition-all text-xs font-medium"
+        >
+          <Plus size={12} />
+          <span>Terminal</span>
+        </button>
+      )}
 
       {editSessionId && sessions[editSessionId] && (
         <EditSessionModal
