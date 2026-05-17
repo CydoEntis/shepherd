@@ -6,6 +6,7 @@ import { SearchAddon } from '@xterm/addon-search'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { CanvasAddon } from '@xterm/addon-canvas'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
+import { WebLinksAddon } from '@xterm/addon-web-links'
 import { ipc } from '../../../lib/ipc'
 import { IPC } from '@shared/ipc-channels'
 import { replayRequest, writeToSession, resizeSession } from '../../session/session.service'
@@ -373,6 +374,10 @@ export function useTerminal(sessionId: string, containerRef: React.RefObject<HTM
       const unicode11 = new Unicode11Addon()
       terminal.loadAddon(unicode11)
       terminal.unicode.activeVersion = '11'
+      const webLinksAddon = new WebLinksAddon((_, uri) => {
+        void openExternal(uri)
+      })
+      terminal.loadAddon(webLinksAddon)
       const oscDisposables: { dispose(): void }[] = []
 
       // OSC 7;file://hostname/path — emitted by shell integration on directory change.

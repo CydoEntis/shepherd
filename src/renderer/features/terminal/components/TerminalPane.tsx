@@ -68,7 +68,7 @@ export function TerminalPane({ sessionId, paneItems }: Props): JSX.Element {
   }
 
   const handleDragOver = (e: React.DragEvent): void => {
-    if (e.dataTransfer.types.includes('Files')) {
+    if (e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes('application/orbit-file')) {
       e.preventDefault()
       setIsDragOver(true)
     }
@@ -81,11 +81,16 @@ export function TerminalPane({ sessionId, paneItems }: Props): JSX.Element {
   const handleDrop = (e: React.DragEvent): void => {
     e.preventDefault()
     setIsDragOver(false)
+    const orbitPath = e.dataTransfer.getData('application/orbit-file')
+    if (orbitPath) {
+      writeToSession({ sessionId, data: `"${orbitPath}" ` })
+      return
+    }
     const paths = Array.from(e.dataTransfer.files)
       .map((f) => (f as unknown as { path: string }).path)
       .filter(Boolean)
     if (!paths.length) return
-    writeToSession({ sessionId, data: paths.map((p) => `@${p}`).join(' ') })
+    writeToSession({ sessionId, data: paths.map((p) => `"${p}"`).join(' ') })
   }
 
   useEffect(() => {
@@ -115,7 +120,7 @@ export function TerminalPane({ sessionId, paneItems }: Props): JSX.Element {
 
       {isDragOver && (
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-brand-bg/70 border-2 border-dashed border-brand-accent/60 rounded pointer-events-none">
-          <span className="text-xs text-brand-accent font-medium">Drop to insert @reference</span>
+          <span className="text-xs text-brand-accent font-medium">Drop to insert path</span>
         </div>
       )}
 
