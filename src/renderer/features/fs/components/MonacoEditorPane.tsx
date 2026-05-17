@@ -76,106 +76,120 @@ type ThemeData = {
   encodedTokensColors?: string[]
 }
 
-function defineCustomThemes(monaco: MonacoInstance): void {
-  monaco.editor.defineTheme('github-dark', {
+// All theme data keyed by id — used to build adapted auto-themes
+const ALL_THEME_DATA: Record<string, ThemeData> = {
+  'vs':           { base: 'vs',     inherit: true, rules: [], colors: { 'editor.background': '#fffffe' } },
+  'vs-dark':      { base: 'vs-dark',inherit: true, rules: [], colors: { 'editor.background': '#1e1e1e' } },
+  'github-dark': {
     base: 'vs-dark', inherit: true,
     rules: [
-      { token: 'comment', foreground: '8b949e' },
-      { token: 'string', foreground: 'a5d6ff' },
-      { token: 'keyword', foreground: 'ff7b72' },
-      { token: 'number', foreground: '79c0ff' },
-      { token: 'type', foreground: 'ffa657' },
-      { token: 'function', foreground: 'd2a8ff' },
+      { token: 'comment', foreground: '8b949e' }, { token: 'string', foreground: 'a5d6ff' },
+      { token: 'keyword', foreground: 'ff7b72' }, { token: 'number', foreground: '79c0ff' },
+      { token: 'type', foreground: 'ffa657' },    { token: 'function', foreground: 'd2a8ff' },
     ],
     colors: {
-      'editor.background': '#0d1117',
-      'editor.foreground': '#c9d1d9',
-      'editor.lineHighlightBackground': '#161b22',
-      'editor.selectionBackground': '#264f7855',
-      'editorLineNumber.foreground': '#30363d',
-      'editorLineNumber.activeForeground': '#8b949e',
-      'editorCursor.foreground': '#c9d1d9',
-      'editorIndentGuide.background': '#21262d',
+      'editor.background': '#0d1117', 'editor.foreground': '#c9d1d9',
+      'editor.lineHighlightBackground': '#161b22', 'editor.selectionBackground': '#264f7855',
+      'editorLineNumber.foreground': '#30363d', 'editorLineNumber.activeForeground': '#8b949e',
+      'editorCursor.foreground': '#c9d1d9', 'editorIndentGuide.background': '#21262d',
     },
-  })
-  monaco.editor.defineTheme('dracula', {
+  },
+  'dracula': {
     base: 'vs-dark', inherit: true,
     rules: [
-      { token: 'comment', foreground: '6272a4' },
-      { token: 'string', foreground: 'f1fa8c' },
-      { token: 'keyword', foreground: 'ff79c6' },
-      { token: 'number', foreground: 'bd93f9' },
-      { token: 'type', foreground: '8be9fd' },
-      { token: 'function', foreground: '50fa7b' },
+      { token: 'comment', foreground: '6272a4' }, { token: 'string', foreground: 'f1fa8c' },
+      { token: 'keyword', foreground: 'ff79c6' }, { token: 'number', foreground: 'bd93f9' },
+      { token: 'type', foreground: '8be9fd' },    { token: 'function', foreground: '50fa7b' },
       { token: 'variable', foreground: 'f8f8f2' },
     ],
     colors: {
-      'editor.background': '#282a36',
-      'editor.foreground': '#f8f8f2',
-      'editor.lineHighlightBackground': '#44475a55',
-      'editor.selectionBackground': '#44475a',
-      'editorLineNumber.foreground': '#6272a4',
-      'editorCursor.foreground': '#f8f8f2',
+      'editor.background': '#282a36', 'editor.foreground': '#f8f8f2',
+      'editor.lineHighlightBackground': '#44475a55', 'editor.selectionBackground': '#44475a',
+      'editorLineNumber.foreground': '#6272a4', 'editorCursor.foreground': '#f8f8f2',
       'editorIndentGuide.background': '#44475a',
     },
-  })
-  monaco.editor.defineTheme('one-dark', {
+  },
+  'one-dark': {
     base: 'vs-dark', inherit: true,
     rules: [
-      { token: 'comment', foreground: '5c6370' },
-      { token: 'string', foreground: '98c379' },
-      { token: 'keyword', foreground: 'c678dd' },
-      { token: 'number', foreground: 'd19a66' },
-      { token: 'type', foreground: 'e5c07b' },
-      { token: 'function', foreground: '61afef' },
+      { token: 'comment', foreground: '5c6370' }, { token: 'string', foreground: '98c379' },
+      { token: 'keyword', foreground: 'c678dd' }, { token: 'number', foreground: 'd19a66' },
+      { token: 'type', foreground: 'e5c07b' },    { token: 'function', foreground: '61afef' },
       { token: 'variable', foreground: 'e06c75' },
     ],
     colors: {
-      'editor.background': '#282c34',
-      'editor.foreground': '#abb2bf',
-      'editor.lineHighlightBackground': '#2c313a',
-      'editor.selectionBackground': '#3e4451',
-      'editorLineNumber.foreground': '#495162',
-      'editorCursor.foreground': '#528bff',
+      'editor.background': '#282c34', 'editor.foreground': '#abb2bf',
+      'editor.lineHighlightBackground': '#2c313a', 'editor.selectionBackground': '#3e4451',
+      'editorLineNumber.foreground': '#495162', 'editorCursor.foreground': '#528bff',
       'editorIndentGuide.background': '#3b4048',
     },
-  })
-  monaco.editor.defineTheme('monokai', {
+  },
+  'monokai': {
     base: 'vs-dark', inherit: true,
     rules: [
-      { token: 'comment', foreground: '75715e' },
-      { token: 'string', foreground: 'e6db74' },
-      { token: 'keyword', foreground: 'f92672' },
-      { token: 'number', foreground: 'ae81ff' },
-      { token: 'type', foreground: '66d9ef' },
-      { token: 'function', foreground: 'a6e22e' },
+      { token: 'comment', foreground: '75715e' }, { token: 'string', foreground: 'e6db74' },
+      { token: 'keyword', foreground: 'f92672' }, { token: 'number', foreground: 'ae81ff' },
+      { token: 'type', foreground: '66d9ef' },    { token: 'function', foreground: 'a6e22e' },
       { token: 'variable', foreground: 'f8f8f2' },
     ],
     colors: {
-      'editor.background': '#272822',
-      'editor.foreground': '#f8f8f2',
-      'editor.lineHighlightBackground': '#3e3d3255',
-      'editor.selectionBackground': '#49483e',
-      'editorLineNumber.foreground': '#75715e',
-      'editorCursor.foreground': '#f8f8f2',
+      'editor.background': '#272822', 'editor.foreground': '#f8f8f2',
+      'editor.lineHighlightBackground': '#3e3d3255', 'editor.selectionBackground': '#49483e',
+      'editorLineNumber.foreground': '#75715e', 'editorCursor.foreground': '#f8f8f2',
       'editorIndentGuide.background': '#3b3a32',
     },
+  },
+  'blackboard':        BlackboardTheme as ThemeData,
+  'amy':               AmyTheme as ThemeData,
+  'clouds-midnight':   CloudsMidnightTheme as ThemeData,
+  'cobalt2':           Cobalt2Theme as ThemeData,
+  'dawn':              DawnTheme as ThemeData,
+  'merbivore-soft':    MerbivoreSoftTheme as ThemeData,
+  'monokai-bright':    MonokaiBrightTheme as ThemeData,
+  'night-owl':         NightOwlTheme as ThemeData,
+  'oceanic-next':      OceanicNextTheme as ThemeData,
+  'pastels-on-dark':   PastelsOnDarkTheme as ThemeData,
+  'upstream-sunburst': UpstreamSunburstTheme as ThemeData,
+  'twilight':          TwilightTheme as ThemeData,
+  'vibrant-ink':       VibrantInkTheme as ThemeData,
+  'birds-of-paradise': BirdsOfParadiseTheme as ThemeData,
+  'solarized-light':   SolarizedLightTheme as ThemeData,
+}
+
+// App theme background colors — applied as editor.background override in auto mode
+const APP_THEME_EDITOR_BG: Record<string, { bg: string; lineHighlight: string; gutter: string }> = {
+  dark:   { bg: '#0f1117', lineHighlight: '#1a1d2480', gutter: '#0f1117' },
+  light:  { bg: '#f6f0e4', lineHighlight: '#e8e2d650', gutter: '#f6f0e4' },
+  space:  { bg: '#0a0719', lineHighlight: '#130c2550', gutter: '#0a0719' },
+  nebula: { bg: '#080514', lineHighlight: '#0e0b2050', gutter: '#080514' },
+  solar:  { bg: '#0c0804', lineHighlight: '#1a120850', gutter: '#0c0804' },
+  aurora: { bg: '#040c0e', lineHighlight: '#0a181c50', gutter: '#040c0e' },
+  mars:   { bg: '#100805', lineHighlight: '#1e110850', gutter: '#100805' },
+  pulsar: { bg: '#040814', lineHighlight: '#0a102250', gutter: '#040814' },
+  system: { bg: '#0f1117', lineHighlight: '#1a1d2480', gutter: '#0f1117' },
+}
+
+function buildAdaptedTheme(baseId: string, appTheme: string): ThemeData | null {
+  const base = ALL_THEME_DATA[baseId]
+  if (!base) return null
+  const bg = APP_THEME_EDITOR_BG[appTheme] ?? APP_THEME_EDITOR_BG.space
+  return {
+    base: base.base,
+    inherit: base.inherit,
+    rules: base.rules,
+    colors: {
+      ...base.colors,
+      'editor.background': bg.bg,
+      'editor.lineHighlightBackground': bg.lineHighlight,
+      'editorGutter.background': bg.gutter,
+    },
+  }
+}
+
+function defineCustomThemes(monaco: MonacoInstance): void {
+  Object.entries(ALL_THEME_DATA).forEach(([id, data]) => {
+    if (id !== 'vs' && id !== 'vs-dark') monaco.editor.defineTheme(id, data)
   })
-  monaco.editor.defineTheme('blackboard',        BlackboardTheme as ThemeData)
-  monaco.editor.defineTheme('amy',               AmyTheme as ThemeData)
-  monaco.editor.defineTheme('clouds-midnight',   CloudsMidnightTheme as ThemeData)
-  monaco.editor.defineTheme('cobalt2',           Cobalt2Theme as ThemeData)
-  monaco.editor.defineTheme('dawn',              DawnTheme as ThemeData)
-  monaco.editor.defineTheme('merbivore-soft',    MerbivoreSoftTheme as ThemeData)
-  monaco.editor.defineTheme('monokai-bright',    MonokaiBrightTheme as ThemeData)
-  monaco.editor.defineTheme('night-owl',         NightOwlTheme as ThemeData)
-  monaco.editor.defineTheme('oceanic-next',      OceanicNextTheme as ThemeData)
-  monaco.editor.defineTheme('pastels-on-dark',   PastelsOnDarkTheme as ThemeData)
-  monaco.editor.defineTheme('upstream-sunburst', UpstreamSunburstTheme as ThemeData)
-  monaco.editor.defineTheme('twilight',          TwilightTheme as ThemeData)
-  monaco.editor.defineTheme('vibrant-ink',       VibrantInkTheme as ThemeData)
-  monaco.editor.defineTheme('birds-of-paradise', BirdsOfParadiseTheme as ThemeData)
-  monaco.editor.defineTheme('solarized-light',   SolarizedLightTheme as ThemeData)
 }
 
 function CtxSubMenu({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
@@ -236,6 +250,7 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
   const [pendingClose, setPendingClose] = useState(false)
   const editorRef = useRef<EditorInstance | null>(null)
+  const monacoRef = useRef<MonacoInstance | null>(null)
   const removeLayoutLeaf = useStore((s) => s.removeLayoutLeaf)
   const updateSettings = useStore((s) => s.updateSettings)
 
@@ -263,7 +278,19 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
     }
   })()
   const monacoThemeOverride: MonacoThemeId | null = (MONACO_THEMES.find((t) => t.id === editorThemeSetting)?.id ?? null)
-  const monacoTheme = monacoThemeOverride ?? autoTheme
+  // In auto mode we use 'orbit-auto' — a theme that takes the auto-selected syntax colors
+  // but replaces the background with the current app theme's background color
+  const monacoTheme = monacoThemeOverride ?? 'orbit-auto'
+
+  // Rebuild 'orbit-auto' whenever the app theme or auto-selected editor theme changes
+  useEffect(() => {
+    const monaco = monacoRef.current
+    if (!monaco || monacoThemeOverride) return
+    const adapted = buildAdaptedTheme(autoTheme, theme ?? 'space')
+    if (!adapted) return
+    monaco.editor.defineTheme('orbit-auto', adapted)
+    monaco.editor.setTheme('orbit-auto')
+  }, [theme, autoTheme, monacoThemeOverride])
 
   useEffect(() => {
     setContent(null)
@@ -372,7 +399,13 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
             theme={monacoTheme}
             onMount={(editor, monaco) => {
               editorRef.current = editor
+              monacoRef.current = monaco
               defineCustomThemes(monaco)
+              // Build the initial adapted theme before anything renders
+              if (!monacoThemeOverride) {
+                const adapted = buildAdaptedTheme(autoTheme, theme ?? 'space')
+                if (adapted) monaco.editor.defineTheme('orbit-auto', adapted)
+              }
               // Disable semantic validation — Monaco has no tsconfig/node_modules context
               // so module-not-found and type errors are always false positives here
               monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
