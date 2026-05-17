@@ -369,21 +369,16 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
   const ctxY = ctxMenu ? Math.min(ctxMenu.y, window.innerHeight - 320) : 0
 
   return (
-    <div className="flex flex-col w-full h-full bg-brand-bg">
-      {/* Save bar — only visible when dirty */}
+    <div className="relative flex flex-col w-full h-full bg-brand-bg">
+      {/* Floating save button — only when dirty */}
       {dirty && (
-        <div className="flex-shrink-0 flex items-center gap-2 px-3 py-1 border-b border-brand-panel/60 bg-brand-surface">
-          <span className="text-[10px] text-zinc-500 truncate flex-1 min-w-0">
-            {currentPath.replace(/\\/g, '/').split('/').pop()}
-          </span>
-          <button
-            onClick={() => void handleSave()}
-            disabled={saving}
-            className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-brand-accent/20 text-brand-accent hover:bg-brand-accent/30 transition-colors disabled:opacity-40 flex-shrink-0"
-          >
-            <Save size={10} />{saving ? 'Saving…' : 'Save'}
-          </button>
-        </div>
+        <button
+          onClick={() => void handleSave()}
+          disabled={saving}
+          className="absolute top-2 right-3 z-10 flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-brand-surface/90 backdrop-blur-sm border border-brand-panel/60 text-brand-accent hover:bg-brand-panel shadow-md transition-colors disabled:opacity-40"
+        >
+          <Save size={11} />{saving ? 'Saving…' : 'Save'}
+        </button>
       )}
 
       {/* Editor */}
