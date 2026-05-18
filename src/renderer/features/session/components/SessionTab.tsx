@@ -5,6 +5,7 @@ import { cn } from '../../../lib/utils'
 import type { SessionMeta } from '@shared/ipc-types'
 import { killSession, patchSession, SESSION_COLORS as TAB_COLORS } from '../session.service'
 import { useStore } from '../../../store/root.store'
+import { useLayoutDnd } from '../../layout/dnd/LayoutDndContext'
 import { useConfirmClose } from '../hooks/useConfirmClose'
 import { EditSessionModal } from './EditSessionModal'
 
@@ -23,6 +24,7 @@ interface Props {
 export function SessionTab({ meta, isActive, isDragOver, onActivate, onContextMenu, onDragStart, onDragOver, onDrop, onDragEnd }: Props): JSX.Element {
   const removeTab = useStore((s) => s.removeTab)
   const upsertSession = useStore((s) => s.upsertSession)
+  const { startDrag, endDrag } = useLayoutDnd()
   const [editOpen, setEditOpen] = useState(false)
   const { requestClose, modal: closeModal } = useConfirmClose()
 
@@ -60,10 +62,14 @@ export function SessionTab({ meta, isActive, isDragOver, onActivate, onContextMe
         onClick={onActivate}
         onDoubleClick={handleDoubleClick}
         onContextMenu={(e) => { e.preventDefault(); onContextMenu?.(e) }}
-        onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; onDragStart?.() }}
+        onDragStart={(e) => {
+          e.dataTransfer.effectAllowed = 'move'
+          startDrag({ type: 'sidebar-session', sessionId: meta.sessionId })
+          onDragStart?.()
+        }}
         onDragOver={onDragOver}
         onDrop={(e) => { e.preventDefault(); onDrop?.() }}
-        onDragEnd={onDragEnd}
+        onDragEnd={() => { endDrag(); onDragEnd?.() }}
         className={cn(
           'flex items-center gap-1.5 h-full px-3 text-sm font-medium cursor-pointer border-b-2 transition-colors select-none flex-shrink-0 min-w-[120px] max-w-[200px]',
           isActive

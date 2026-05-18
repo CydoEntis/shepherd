@@ -49,9 +49,14 @@ export function PaneDropTarget({ leafId, tabId, children, acceptsCenter }: Props
   const moveEditorTab = useStore((s) => s.moveEditorTab)
 
   const isDragging = dragState !== null
+  // isSource controls whether the OVERLAY renders (overlay blocks child events).
+  // editor-tab from same leaf: keep isSource=true so the overlay is suppressed and tab buttons
+  // remain reachable for within-bar reordering (tab button onDragOver stops propagation during
+  // reorder, so handleDragOver below only fires when the cursor leaves the tab bar).
   const isSource =
     (dragState?.type === 'layout-leaf' && dragState.leafId === leafId) ||
     (dragState?.type === 'editor-tab' && dragState.sourceLeafId === leafId)
+  const isSelfEditorTab = dragState?.type === 'editor-tab' && dragState.sourceLeafId === leafId
   const activeZone = activeDropTarget?.leafId === leafId ? activeDropTarget.side : null
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
@@ -60,7 +65,22 @@ export function PaneDropTarget({ leafId, tabId, children, acceptsCenter }: Props
       if (e.dataTransfer.types.includes('Files')) e.preventDefault()
       return
     }
-    if (isSource || !paneRef.current) return
+    if (!paneRef.current) return
+
+    // Self editor-tab: support edge-only splits. The tab bar's per-tab onDragOver calls
+    // stopPropagation during within-bar reorder, so this branch only fires when the cursor
+    // has moved into the content area — a genuine intent to split the pane.
+    if (isSelfEditorTab) {
+      const side = hitSide(e, paneRef.current, false) // never center — merge into self is a no-op
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+      if (activeDropTarget?.leafId !== leafId || activeDropTarget.side !== side) {
+        setActiveDropTarget({ leafId, side })
+      }
+      return
+    }
+
+    if (isSource) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     const allowCenter = !!acceptsCenter && (dragState.type === 'file-path' || dragState.type === 'editor-tab')
@@ -68,7 +88,7 @@ export function PaneDropTarget({ leafId, tabId, children, acceptsCenter }: Props
     if (activeDropTarget?.leafId !== leafId || activeDropTarget.side !== side) {
       setActiveDropTarget({ leafId, side })
     }
-  }, [dragState, isSource, leafId, activeDropTarget, acceptsCenter, setActiveDropTarget])
+  }, [dragState, isSource, isSelfEditorTab, leafId, activeDropTarget, acceptsCenter, setActiveDropTarget])
 
   const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     if (!paneRef.current?.contains(e.relatedTarget as Node)) {
@@ -175,13 +195,14 @@ export function PaneDropTarget({ leafId, tabId, children, acceptsCenter }: Props
     >
       {children}
 
-      {/* Transparent overlay — blocks terminal canvas from eating drag events for all internal drags */}
+      {/* Transparent overlay — blocks terminal canvas from eating drag events on target panes.
+          Not rendered for source pane (isSource=true) so tab buttons remain reachable. */}
       {isDragging && !isSource && (
         <div className="absolute inset-0 z-20" />
       )}
 
-      {/* Drop preview highlight */}
-      {isDragging && !isSource && activeZone && (
+      {/* Drop preview highlight — also shown for self editor-tab edge drops (splits) */}
+      {isDragging && activeZone && (!isSource || isSelfEditorTab) && (
         <div
           className={cn(
             'absolute z-30 pointer-events-none rounded',

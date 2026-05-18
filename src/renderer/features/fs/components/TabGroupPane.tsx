@@ -1,16 +1,14 @@
 import { useRef, useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Plus, Search, ChevronUp, ChevronDown } from 'lucide-react'
+import { X, Search, ChevronUp, ChevronDown } from 'lucide-react'
 import { MonacoEditorPane } from './MonacoEditorPane'
 import { useTerminal } from '../../terminal/hooks/useTerminal'
 import { TerminalBreadcrumbs } from '../../terminal/components/TerminalBreadcrumbs'
 import { writeToSession } from '../../session/session.service'
 import { useStore } from '../../../store/root.store'
-import { useLayoutDnd } from '../../layout/dnd/LayoutDndContext'
-import { cn } from '../../../lib/utils'
+import { normalizePath } from '../../../lib/utils'
+import { PaneTabBar } from '../../layout/components/PaneTabBar'
 import type { EditorTab } from '../../layout/layout-tree'
-
-const GHOST_SRC = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
 
 interface TabGroupPaneProps {
   tabs: EditorTab[]
@@ -52,18 +50,20 @@ function TerminalTabSlot({ sessionId, isActive, tabId, leafId, onClose }: Termin
   }
 
   const handleDrop = (e: React.DragEvent): void => {
-    e.preventDefault()
-    e.stopPropagation()
     setIsDragOver(false)
     const orbitPath = e.dataTransfer.getData('application/orbit-file')
     if (orbitPath) {
+      e.preventDefault()
+      e.stopPropagation()
       writeToSession({ sessionId, data: `"${orbitPath}" ` })
       return
     }
     const paths = Array.from(e.dataTransfer.files)
       .map((f) => (f as unknown as { path: string }).path)
       .filter(Boolean)
-    if (!paths.length) return
+    if (!paths.length) return // not a file drop — let PaneDropTarget handle it (no stopPropagation)
+    e.preventDefault()
+    e.stopPropagation()
     writeToSession({ sessionId, data: paths.map((p) => `"${p}"`).join(' ') })
   }
 
@@ -163,46 +163,26 @@ function TerminalTabSlot({ sessionId, isActive, tabId, leafId, onClose }: Termin
 }
 
 export function TabGroupPane({ tabs, activeIndex, tabId, leafId }: TabGroupPaneProps): JSX.Element {
-  const setEditorGroupActive = useStore((s) => s.setEditorGroupActive)
   const removeFileFromEditorGroup = useStore((s) => s.removeFileFromEditorGroup)
   const removeLayoutLeaf = useStore((s) => s.removeLayoutLeaf)
-  const reorderTabInEditorGroup = useStore((s) => s.reorderTabInEditorGroup)
-  const sessions = useStore((s) => s.sessions)
-  const moveEditorTab = useStore((s) => s.moveEditorTab)
-  const dragTabIndex = useRef<number | null>(null)
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
-  const [tabBarDragOver, setTabBarDragOver] = useState(false)
-  const ghostRef = useRef<HTMLImageElement | null>(null)
-  const { startDrag, endDrag, dragState, setActiveDropTarget } = useLayoutDnd()
 
   const safeIndex = Math.min(activeIndex, tabs.length - 1)
   const activeTab = tabs[safeIndex]
 
-  const handleCloseTab = (e: React.MouseEvent, index: number): void => {
-    e.stopPropagation()
-    if (tabs.length <= 1) {
-      removeLayoutLeaf(tabId, leafId)
-    } else {
-      removeFileFromEditorGroup(tabId, leafId, index)
-    }
+  const handleCloseTabAtIndex = (index: number): void => {
+    if (tabs.length <= 1) removeLayoutLeaf(tabId, leafId)
+    else removeFileFromEditorGroup(tabId, leafId, index)
   }
 
   const handleNewTerminal = (): void => {
     document.dispatchEvent(new CustomEvent('acc:new-terminal-in-pane', { detail: { tabId, leafId } }))
   }
 
-  const getTabLabel = (tab: EditorTab): string => {
-    if (tab.kind === 'file') {
-      return tab.path.replace(/\\/g, '/').split('/').pop() ?? tab.path
-    }
-    return sessions[tab.sessionId]?.name ?? 'Terminal'
-  }
-
-  const getTabColor = (tab: EditorTab): string | null => {
-    if (tab.kind === 'terminal') {
-      return sessions[tab.sessionId]?.color ?? '#22c55e'
-    }
-    return null
+  const handleNewFile = (): void => {
+    const { activeWorkspaceId, workspaces } = useStore.getState()
+    const ws = workspaces.find((w) => w.id === activeWorkspaceId && !w.isRoot)
+    if (!ws?.rootPath) return
+    document.dispatchEvent(new CustomEvent('acc:new-file-at-root', { detail: { parentDir: normalizePath(ws.rootPath), type: 'file' } }))
   }
 
   // Collect all terminal session IDs for rendering TerminalTabSlot components
@@ -213,113 +193,14 @@ export function TabGroupPane({ tabs, activeIndex, tabId, leafId }: TabGroupPaneP
 
   return (
     <div className="flex flex-col w-full h-full">
-      {/* Tab bar — also a merge drop target for editor-tab drags from other panes */}
-      <div
-        className={cn(
-          'flex items-stretch border-b overflow-x-auto flex-shrink-0 min-h-0 transition-colors',
-          tabBarDragOver
-            ? 'bg-brand-accent/15 border-brand-accent/60'
-            : 'bg-brand-panel/60 border-white/8'
-        )}
-        onDragOver={(e) => {
-          if (dragState?.type !== 'editor-tab' || dragState.sourceLeafId === leafId) return
-          e.preventDefault()
-          setTabBarDragOver(true)
-        }}
-        onDragLeave={(e) => {
-          if (!e.currentTarget.contains(e.relatedTarget as Node)) setTabBarDragOver(false)
-        }}
-        onDrop={(e) => {
-          if (dragState?.type !== 'editor-tab' || dragState.sourceLeafId === leafId) return
-          e.preventDefault()
-          e.stopPropagation()
-          setTabBarDragOver(false)
-          moveEditorTab(dragState.sourceTabId, dragState.sourceLeafId, dragState.tabIndex, tabId, leafId, null)
-          endDrag()
-        }}
-      >
-        {tabs.map((tab, i) => {
-          const label = getTabLabel(tab)
-          const color = getTabColor(tab)
-          const isActive = i === safeIndex
-
-          const showDropIndicator = dragOverIndex === i && dragTabIndex.current !== null && dragTabIndex.current !== i
-
-          return (
-            <button
-              key={`${tab.kind}-${tab.kind === 'terminal' ? tab.sessionId : tab.path}-${i}`}
-              draggable
-              onClick={() => {
-                setEditorGroupActive(tabId, leafId, i)
-                if (tab.kind === 'terminal') {
-                  useStore.getState().setFocusedSession(tab.sessionId)
-                } else {
-                  useStore.getState().setFocusedLeaf(leafId)
-                }
-              }}
-              onDragStart={(e) => {
-                dragTabIndex.current = i
-                e.dataTransfer.effectAllowed = 'move'
-                if (ghostRef.current) e.dataTransfer.setDragImage(ghostRef.current, 0, 0)
-                startDrag({ type: 'editor-tab', sourceTabId: tabId, sourceLeafId: leafId, tabIndex: i, tab })
-              }}
-              onDragEnd={() => {
-                dragTabIndex.current = null
-                setDragOverIndex(null)
-              }}
-              onDragOver={(e) => {
-                if (dragTabIndex.current === null) return
-                e.preventDefault()
-                e.stopPropagation()
-                setDragOverIndex(i)
-              }}
-              onDrop={(e) => {
-                e.stopPropagation()
-                e.preventDefault()
-                const from = dragTabIndex.current
-                dragTabIndex.current = null
-                setDragOverIndex(null)
-                if (from === null || from === i) return
-                reorderTabInEditorGroup(tabId, leafId, from, i)
-              }}
-              className={cn(
-                'group flex items-center gap-1.5 px-3 py-1.5 text-[11px] flex-shrink-0 border-r border-white/8 transition-colors select-none',
-                isActive
-                  ? 'bg-brand-bg text-zinc-200 border-t-2'
-                  : 'text-zinc-500 hover:text-zinc-300 hover:bg-brand-surface/60',
-                showDropIndicator && 'border-l-2 border-l-brand-accent'
-              )}
-              style={isActive && color ? { borderTopColor: color } : isActive ? { borderTopColor: 'rgb(var(--brand-accent))' } : undefined}
-            >
-              {tab.kind === 'terminal' && color && (
-                <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
-              )}
-              <span className="max-w-[120px] truncate">{label}</span>
-              <span
-                onClick={(e) => handleCloseTab(e, i)}
-                className="flex items-center justify-center w-3.5 h-3.5 rounded opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-zinc-300 hover:bg-white/10 transition-all flex-shrink-0"
-              >
-                <X size={9} />
-              </span>
-            </button>
-          )
-        })}
-
-        {/* New terminal tab button */}
-        <button
-          onMouseDown={handleNewTerminal}
-          title="New terminal in pane"
-          className="flex items-center justify-center w-7 h-full text-zinc-600 hover:text-zinc-300 hover:bg-brand-surface/60 transition-colors flex-shrink-0"
-        >
-          <Plus size={12} />
-        </button>
-
-        {/* Spacer */}
-        <div className="flex-1" />
-      </div>
-
-      {/* Ghost image for drag — transparent 1×1, keeps browser ghost invisible */}
-      <img ref={ghostRef} src={GHOST_SRC} className="absolute opacity-0 pointer-events-none" style={{ left: -9999, top: -9999 }} alt="" aria-hidden />
+      <PaneTabBar
+        tabs={tabs}
+        activeIndex={activeIndex}
+        tabId={tabId}
+        leafId={leafId}
+        onNewTerminal={handleNewTerminal}
+        onNewFile={handleNewFile}
+      />
 
       {/* Content area */}
       <div className="flex-1 min-h-0 relative">
@@ -331,7 +212,7 @@ export function TabGroupPane({ tabs, activeIndex, tabId, leafId }: TabGroupPaneP
             isActive={tabIndex === safeIndex}
             tabId={tabId}
             leafId={leafId}
-            onClose={() => handleCloseTab({ stopPropagation: () => {} } as React.MouseEvent, tabIndex)}
+            onClose={() => handleCloseTabAtIndex(tabIndex)}
           />
         ))}
 
