@@ -76,6 +76,7 @@ export interface SessionSlice {
   reorderTabInEditorGroup: (tabId: string, leafId: string, fromIndex: number, toIndex: number) => void
   closeNonMainPane: (tabId: string, leafId: string) => void
   moveEditorTab: (srcTabId: string, srcLeafId: string, tabIndex: number, dstTabId: string, dstLeafId: string, edge?: 'top' | 'bottom' | 'left' | 'right' | null) => void
+  closeTabsInEditorGroup: (tabId: string, leafId: string, mode: 'others' | 'left' | 'right', keepIndex: number) => void
 
 
   openFilesList: string[]
@@ -818,6 +819,21 @@ export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', neve
       }
       if (tab.kind === 'terminal') { state.focusedSessionId = tab.sessionId; state.focusedLeafId = null }
       else { state.focusedSessionId = null }
+    }),
+
+  closeTabsInEditorGroup: (tabId, leafId, mode, keepIndex) =>
+    set((state) => {
+      const tree = state.paneTree[tabId]
+      if (!tree) return
+      const leaf = findLeafById(tree, leafId)
+      if (!leaf || leaf.panel !== 'editor-group') return
+      const tabs = leaf.tabs
+      const newTabs =
+        mode === 'others' ? [tabs[keepIndex]] :
+        mode === 'left'   ? tabs.slice(keepIndex) :
+                            tabs.slice(0, keepIndex + 1)
+      const updatedLeaf: LayoutLeaf = { ...leaf, tabs: newTabs, activeIndex: mode === 'left' ? 0 : Math.min(keepIndex, newTabs.length - 1) }
+      state.paneTree[tabId] = replaceNode(tree, leafId, updatedLeaf)
     }),
 
   openTerminalInLayout: (tabId, meta) =>
