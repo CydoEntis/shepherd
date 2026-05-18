@@ -2,7 +2,7 @@ import { useRef, useCallback } from 'react'
 import { cn } from '../../../lib/utils'
 import { useLayoutDnd } from './LayoutDndContext'
 import { useStore } from '../../../store/root.store'
-import { makeNotesLeaf, findNotesLeafIdForNote, makeFileEditorLeaf, findLeafById, collectFileEditorLeaves } from '../layout-tree'
+import { makeFileEditorLeaf, findLeafById, collectFileEditorLeaves } from '../layout-tree'
 import { normalizePath } from '../../../lib/utils'
 import type { DropSide } from './LayoutDndContext'
 
@@ -10,14 +10,16 @@ interface Props {
   leafId: string
   tabId: string
   children: React.ReactNode
+  acceptsCenter?: boolean
 }
 
-function hitSide(e: React.DragEvent, el: HTMLElement): DropSide {
+function hitSide(e: React.DragEvent, el: HTMLElement, allowCenter: boolean): DropSide {
   const rect = el.getBoundingClientRect()
   const rx = (e.clientX - rect.left) / rect.width
   const ry = (e.clientY - rect.top) / rect.height
   const dx = Math.min(rx, 1 - rx)
   const dy = Math.min(ry, 1 - ry)
+  if (allowCenter && dx > 0.2 && dy > 0.2) return 'center'
   if (dx < dy) return rx < 0.5 ? 'left' : 'right'
   return ry < 0.5 ? 'top' : 'bottom'
 }
@@ -27,9 +29,10 @@ const ZONE_CLASS: Record<DropSide, string> = {
   right:  'top-1 bottom-1 right-1 w-[45%]',
   top:    'top-1 left-1 right-1 h-[45%]',
   bottom: 'bottom-1 left-1 right-1 h-[45%]',
+  center: 'inset-2',
 }
 
-export function PaneDropTarget({ leafId, tabId, children }: Props): JSX.Element {
+export function PaneDropTarget({ leafId, tabId, children, acceptsCenter }: Props): JSX.Element {
   const paneRef = useRef<HTMLDivElement>(null)
 
   const { dragState, activeDropTarget, endDrag, setActiveDropTarget } = useLayoutDnd()
@@ -40,10 +43,15 @@ export function PaneDropTarget({ leafId, tabId, children }: Props): JSX.Element 
   const removeLayoutLeaf = useStore((s) => s.removeLayoutLeaf)
   const addOpenFile = useStore((s) => s.addOpenFile)
   const setFocusedLeaf = useStore((s) => s.setFocusedLeaf)
+  const addFileToEditorGroup = useStore((s) => s.addFileToEditorGroup)
   const paneTree = useStore((s) => s.paneTree)
 
+  const moveEditorTab = useStore((s) => s.moveEditorTab)
+
   const isDragging = dragState !== null
-  const isSource = dragState?.type === 'layout-leaf' && dragState.leafId === leafId
+  const isSource =
+    (dragState?.type === 'layout-leaf' && dragState.leafId === leafId) ||
+    (dragState?.type === 'editor-tab' && dragState.sourceLeafId === leafId)
   const activeZone = activeDropTarget?.leafId === leafId ? activeDropTarget.side : null
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
@@ -55,11 +63,12 @@ export function PaneDropTarget({ leafId, tabId, children }: Props): JSX.Element 
     if (isSource || !paneRef.current) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
-    const side = hitSide(e, paneRef.current)
+    const allowCenter = !!acceptsCenter && (dragState.type === 'file-path' || dragState.type === 'editor-tab')
+    const side = hitSide(e, paneRef.current, allowCenter)
     if (activeDropTarget?.leafId !== leafId || activeDropTarget.side !== side) {
       setActiveDropTarget({ leafId, side })
     }
-  }, [dragState, isSource, leafId, activeDropTarget, setActiveDropTarget])
+  }, [dragState, isSource, leafId, activeDropTarget, acceptsCenter, setActiveDropTarget])
 
   const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     if (!paneRef.current?.contains(e.relatedTarget as Node)) {
@@ -74,6 +83,14 @@ export function PaneDropTarget({ leafId, tabId, children }: Props): JSX.Element 
     const tree = paneTree[tabId]
     const direction = (activeZone === 'left' || activeZone === 'right') ? 'horizontal' : 'vertical'
     const side = (activeZone === 'right' || activeZone === 'bottom') ? 'after' : 'before'
+
+    // Center drop — add file to this editor group
+    if (activeZone === 'center' && dragState.type === 'file-path') {
+      addFileToEditorGroup(tabId, leafId, dragState.filePath)
+      addOpenFile(dragState.filePath)
+      endDrag()
+      return
+    }
 
     if (dragState.type === 'file-path') {
       const filePath = dragState.filePath
@@ -140,14 +157,13 @@ export function PaneDropTarget({ leafId, tabId, children }: Props): JSX.Element 
       }
     } else if (dragState.type === 'sidebar-session') {
       insertSessionIntoLayout(tabId, leafId, dragState.sessionId, direction, side)
-    } else if (dragState.type === 'sidebar-notes') {
-      const existingLeafId = dragState.noteId && tree ? findNotesLeafIdForNote(tree, dragState.noteId) : null
-      if (existingLeafId) moveLayout(tabId, existingLeafId, leafId, direction, side)
-      else insertLayout(tabId, leafId, direction, makeNotesLeaf(dragState.noteId), side)
+    } else if (dragState.type === 'editor-tab') {
+      const edge = activeZone === 'center' ? null : activeZone
+      moveEditorTab(dragState.sourceTabId, dragState.sourceLeafId, dragState.tabIndex, tabId, leafId, edge)
     }
 
     endDrag()
-  }, [dragState, activeZone, tabId, leafId, moveLayout, insertSessionIntoLayout, insertLayout, replaceLayoutLeaf, addOpenFile, setFocusedLeaf, paneTree, endDrag])
+  }, [dragState, activeZone, tabId, leafId, moveLayout, insertSessionIntoLayout, insertLayout, replaceLayoutLeaf, addOpenFile, addFileToEditorGroup, setFocusedLeaf, moveEditorTab, paneTree, endDrag])
 
   return (
     <div
@@ -159,8 +175,8 @@ export function PaneDropTarget({ leafId, tabId, children }: Props): JSX.Element 
     >
       {children}
 
-      {/* Transparent overlay — blocks terminal canvas from eating drag events (not for file-path drags so terminals can receive them) */}
-      {isDragging && !isSource && dragState?.type !== 'file-path' && (
+      {/* Transparent overlay — blocks terminal canvas from eating drag events for all internal drags */}
+      {isDragging && !isSource && (
         <div className="absolute inset-0 z-20" />
       )}
 

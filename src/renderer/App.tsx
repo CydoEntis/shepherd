@@ -1,11 +1,9 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { Toaster, toast } from 'sonner'
-import { Settings, HelpCircle, Plus } from 'lucide-react'
-import { marked } from 'marked'
+import { Toaster } from 'sonner'
+import { Settings, HelpCircle } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { useTheme } from './hooks/useTheme'
 import { useSidebarResize } from './hooks/useSidebarResize'
-import { useNoteWindowPreview } from './hooks/useNoteWindowPreview'
 import { TitleBar } from './components/TitleBar'
 import { PaneContextMenu } from './features/session/components/PaneContextMenu'
 import { CommandPalette } from './components/CommandPalette'
@@ -16,7 +14,6 @@ import { NewSessionForm } from './features/session/components/NewSessionForm'
 import { SettingsForm } from './features/settings/components/SettingsForm'
 import { AgentMonitorSidebar } from './features/workspace/components/AgentMonitorSidebar'
 import { AgentMonitorLayout } from './features/workspace/components/AgentMonitorLayout'
-import { SessionDock } from './features/session/components/SessionDock'
 import { GitReviewPanel } from './features/workspace/components/GitReviewPanel'
 import { useSessionLifecycle } from './features/session/hooks/useSessionLifecycle'
 import { useLayoutPersistence } from './features/session/hooks/useLayoutPersistence'
@@ -26,16 +23,14 @@ import { usePaneActions } from './features/session/hooks/usePaneActions'
 import { useAutoUpdater } from './features/updater/hooks/useAutoUpdater'
 import { useGitReview } from './features/workspace/hooks/useGitReview'
 import { useStore } from './store/root.store'
-import { findNotesLeafId } from './features/layout/layout-tree'
 import { LayoutDndProvider } from './features/layout/dnd/LayoutDndContext'
 import { setWindowMeta } from './features/window/window.service'
 import { getUiState, setUiState } from './features/workspace/workspace.service'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { NotificationBell } from './features/notifications/components/NotificationBell'
-import { ipc } from './lib/ipc'
-import { IPC } from '@shared/ipc-channels'
 import { ROOT_WORKSPACE_ID } from '@shared/ipc-types'
 import { cn, normalizePath } from './lib/utils'
+import { findLeafById } from './features/layout/layout-tree'
 
 declare const __APP_VERSION__: string
 
@@ -153,7 +148,6 @@ export function App(): JSX.Element {
   const settingsLoaded = useStore((s) => s.settingsLoaded)
   const dismissedReleaseVersion = useStore((s) => s.settings.dismissedReleaseVersion)
   const updateSettings = useStore((s) => s.updateSettings)
-  const patchNoteContent = useStore((s) => s.patchNoteContent)
   const addNotification = useStore((s) => s.addNotification)
   const markTabNotificationsRead = useStore((s) => s.markTabNotificationsRead)
 
@@ -179,14 +173,13 @@ export function App(): JSX.Element {
   const workspaceProject = workspaces.find((w) => w.id === activeWorkspaceId)?.rootPath || null
   const { sidebarWidth, handleSidebarDragStart } = useSidebarResize(224)
 
-  const selectedSession = useStore((s) => workspaceSessionId ? s.sessions[workspaceSessionId] : null)
   // Active session cwd — updated live via OSC 7 shell integration
   const focusedSessionCwd = useStore((s) => {
     const id = s.focusedSessionId ?? s.activeSessionId
     return id ? (s.sessions[id]?.cwd ?? null) : null
   })
-  const gitRoot = selectedSession?.worktreePath ?? workspaceProject
-  const gitReview = useGitReview(gitRoot, selectedSession?.worktreeBaseBranch)
+  const gitRoot = workspaceProject
+  const gitReview = useGitReview(gitRoot)
 
   useEffect(() => {
     if (settingsLoaded && dismissedReleaseVersion !== __APP_VERSION__) {
@@ -226,13 +219,6 @@ export function App(): JSX.Element {
 
 
   useEffect(() => {
-    return ipc.on(IPC.NOTES_EXTERNAL_UPDATE, (payload) => {
-      const { id, content } = payload as { id: string; content: string }
-      patchNoteContent(id, content)
-    })
-  }, [patchNoteContent])
-
-  useEffect(() => {
     // During restore don't jump — the layout is still being rebuilt.
     // Once restore ends (or if there was never a restore), show the active session immediately.
     if (!isRestoringLayout) setWorkspaceSessionId(storeActiveSessionId ?? '__root__')
@@ -262,33 +248,19 @@ export function App(): JSX.Element {
 
   useTheme(appTheme)
 
-  const toggleNotesPane = useStore((s) => s.toggleNotesPane)
-
   useKeyboardShortcuts({
     onTogglePalette: () => setPaletteOpen((v) => !v),
     onShowShortcuts: () => setShortcutsOpen((v) => !v),
-    onOpenFileFinder: useCallback(() => setFileFinderOpen(true), []),
     onNewNoteDrawer: useCallback(() => {
-      const { activeWorkspaceId, workspaces, activeSessionId: tabId, paneTree } = useStore.getState()
+      const { activeWorkspaceId, workspaces } = useStore.getState()
       const workspace = workspaces.find((w) => w.id === activeWorkspaceId && !w.isRoot)
-
       if (workspace?.rootPath) {
         document.dispatchEvent(new CustomEvent('acc:new-file-at-root', {
           detail: { parentDir: normalizePath(workspace.rootPath), type: 'file' }
         }))
-        return
       }
-
-      // Root or workspace without folder — toggle notes pane
-      if (!tabId) return
-      const tree = paneTree[tabId]
-      if (tree && findNotesLeafId(tree)) {
-        document.dispatchEvent(new CustomEvent('acc:new-note'))
-      } else {
-        toggleNotesPane(tabId)
-        setTimeout(() => document.dispatchEvent(new CustomEvent('acc:new-note')), 50)
-      }
-    }, [toggleNotesPane]),
+    }, []),
+    onToggleProjectPalette: useCallback(() => document.dispatchEvent(new CustomEvent('acc:open-project')), []),
   })
 
   const { handleSplitH, handleSplitV, handleDetach, handleReattach, handleClosePane, handleKillSession } = usePaneActions(contextMenu)
@@ -297,56 +269,45 @@ export function App(): JSX.Element {
     setContextMenu({ x: e.clientX, y: e.clientY, sessionId, tabId })
   }, [])
 
-  const notePreviewWindowNoteId = useNoteWindowPreview()
-
   const focusedSessionId = useStore((s) => s.focusedSessionId)
-  const notes = useStore((s) => s.notes)
-  const [focusedNoteId, setFocusedNoteId] = useState<string | null>(null)
+  const focusedLeafId = useStore((s) => s.focusedLeafId)
 
-  useEffect(() => {
-    setFocusedNoteId(null)
-    const handler = (e: Event): void => {
-      const { noteId, tabId } = (e as CustomEvent<{ noteId: string; tabId: string }>).detail
-      if (tabId === workspaceSessionId) setFocusedNoteId(noteId)
+  const titleBarTitle = (() => {
+    if (sidePanel === 'settings') return 'Settings'
+    // Terminal focused
+    if (focusedSessionId && sessions[focusedSessionId]) return sessions[focusedSessionId].name
+    // File or any tab focused — look at the active tab in the focused leaf
+    if (focusedLeafId) {
+      for (const tree of Object.values(paneTree)) {
+        if (!tree) continue
+        const leaf = findLeafById(tree, focusedLeafId)
+        if (leaf?.panel === 'editor-group') {
+          const activeTab = leaf.tabs[Math.min(leaf.activeIndex, leaf.tabs.length - 1)]
+          if (activeTab?.kind === 'file') return activeTab.path.replace(/\\/g, '/').split('/').pop() ?? 'Orbit'
+          if (activeTab?.kind === 'terminal') return sessions[activeTab.sessionId]?.name ?? 'Orbit'
+        }
+      }
     }
-    document.addEventListener('acc:note-active-changed', handler)
-    return () => document.removeEventListener('acc:note-active-changed', handler)
-  }, [workspaceSessionId])
-
-  useEffect(() => { if (focusedSessionId) setFocusedNoteId(null) }, [focusedSessionId])
-
-  useEffect(() => {
-    const handler = (): void => setFocusedNoteId(null)
-    document.addEventListener('acc:terminal-pane-focused', handler)
-    return () => document.removeEventListener('acc:terminal-pane-focused', handler)
-  }, [])
-
-  const titleSession = (focusedSessionId && sessions[focusedSessionId])
-    ? sessions[focusedSessionId]
-    : workspaceSessionId ? sessions[workspaceSessionId] : null
-  const focusedNote = focusedNoteId ? notes.find((n) => n.id === focusedNoteId) : null
-  const noteTitleText = focusedNote
-    ? (focusedNote.content.split('\n').find((l) => l.trim())?.trim().slice(0, 50) || 'Untitled')
-    : null
-  const titleBarTitle = sidePanel === 'settings' ? 'Settings' : (noteTitleText ?? titleSession?.name ?? 'Orbit')
-  const titleBarSubtitle = sidePanel === 'settings' ? '' : (noteTitleText ? 'Note' : (titleSession?.cwd ?? ''))
-
-
-  if (notePreviewWindowNoteId) {
-    const previewNote = notes.find((n) => n.id === notePreviewWindowNoteId)
-    const previewContent = previewNote?.content ?? ''
-    const previewTitle = previewContent.split('\n').find((l) => l.trim())?.trim().slice(0, 50) || 'Untitled'
-    const previewHtml = marked.parse(previewContent) as string
-    return (
-      <div className="flex flex-col h-screen bg-brand-bg text-zinc-100 overflow-hidden">
-        <TitleBar title={`Preview · ${previewTitle}`} subtitle="Note Preview" />
-        <div
-          className="flex-1 overflow-y-auto px-8 py-6 markdown-body select-text min-h-0"
-          dangerouslySetInnerHTML={{ __html: previewHtml }}
-        />
-      </div>
-    )
-  }
+    return 'Orbit'
+  })()
+  const titleBarSubtitle = (() => {
+    if (sidePanel === 'settings') return ''
+    if (focusedSessionId && sessions[focusedSessionId]) return sessions[focusedSessionId].cwd ?? ''
+    if (focusedLeafId) {
+      for (const tree of Object.values(paneTree)) {
+        if (!tree) continue
+        const leaf = findLeafById(tree, focusedLeafId)
+        if (leaf?.panel === 'editor-group') {
+          const activeTab = leaf.tabs[Math.min(leaf.activeIndex, leaf.tabs.length - 1)]
+          if (activeTab?.kind === 'file') {
+            const norm = activeTab.path.replace(/\\/g, '/')
+            return norm.substring(0, norm.lastIndexOf('/')) || ''
+          }
+        }
+      }
+    }
+    return ''
+  })()
 
   return (
     <div className="flex flex-col h-screen bg-brand-bg text-zinc-100 overflow-hidden">
@@ -370,26 +331,8 @@ export function App(): JSX.Element {
 
         {/* Main content */}
         <div className="flex-1 min-w-0 min-h-0 flex relative">
-          <div className="flex-1 min-w-0 min-h-0 flex flex-col p-2 gap-2">
-            {/* Top row: floating tab card + Terminal button — split from one piece */}
-            <div className="flex-shrink-0 flex items-stretch gap-[3px]">
-              <div className="flex-1 min-w-0 rounded-l-xl border border-r-0 border-brand-panel/60 bg-brand-surface shadow-sm overflow-hidden">
-                <SessionDock
-                  activeSessionId={workspaceSessionId}
-                  onSelectSession={setWorkspaceSessionId}
-                  showAddButton={false}
-                />
-              </div>
-              <button
-                onClick={() => document.dispatchEvent(new CustomEvent('acc:new-session'))}
-                className="flex-shrink-0 flex items-center gap-1.5 px-3 rounded-r-xl text-zinc-300 hover:text-zinc-100 bg-brand-surface hover:bg-brand-panel border border-l-0 border-brand-panel/60 shadow-sm transition-all text-xs font-medium"
-              >
-                <Plus size={12} />
-                <span>Terminal</span>
-              </button>
-            </div>
-            {/* Floating content card — pane area fills edge to edge */}
-            <div className="flex-1 min-h-0 rounded-xl border border-brand-panel/60 bg-brand-surface shadow-md overflow-hidden">
+          <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+            <div className="flex-1 min-h-0 overflow-hidden bg-brand-surface">
               <ErrorBoundary>
               <AgentMonitorLayout
                 sessionId={

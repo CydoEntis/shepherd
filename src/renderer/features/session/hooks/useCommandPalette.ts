@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useStore } from '../../../store/root.store'
-import { findTabForSession } from '../../layout/layout-tree'
 
 export interface PaletteItem {
   id: string
@@ -20,11 +19,7 @@ export function useCommandPalette(open: boolean, onClose: () => void, onShowShor
   const [query, setQuery] = useState('')
   const [selectedIdx, setSelectedIdx] = useState(0)
 
-  const sessions = useStore((s) => s.sessions)
   const settings = useStore((s) => s.settings)
-  const paneTree = useStore((s) => s.paneTree)
-  const setActiveSession = useStore((s) => s.setActiveSession)
-  const setFocusedSession = useStore((s) => s.setFocusedSession)
 
   useEffect(() => {
     if (!open) { setQuery(''); setSelectedIdx(0) }
@@ -37,33 +32,14 @@ export function useCommandPalette(open: boolean, onClose: () => void, onShowShor
   const items = useMemo<PaletteItem[]>(() => {
     const hk = settings.hotkeys
 
-    const commands: PaletteItem[] = [
-      { id: 'new-session',    label: 'New Terminal',        description: hk.newSession,     iconName: 'Plus',        section: 'Commands', action: () => { document.dispatchEvent(new CustomEvent('acc:new-session'));      onClose() } },
-      { id: 'open-project',   label: 'Open Folder',         description: hk.openProject,   iconName: 'FolderOpen',  section: 'Commands', action: () => { document.dispatchEvent(new CustomEvent('acc:open-project'));    onClose() } },
-      { id: 'open-settings',  label: 'Open Settings',       description: '',               iconName: 'Settings',    section: 'Commands', action: () => { document.dispatchEvent(new CustomEvent('acc:open-settings'));   onClose() } },
-      { id: 'git-review',     label: 'Review Git Changes',  description: 'Ctrl+Shift+G',   iconName: 'GitBranch',   section: 'Commands', action: () => { document.dispatchEvent(new CustomEvent('acc:toggle-git-review')); onClose() } },
-      { id: 'toggle-notes',   label: 'Toggle Notes',        description: hk.quickNote,     iconName: 'NotebookPen', section: 'Commands', action: () => { document.dispatchEvent(new CustomEvent('acc:quick-note'));      onClose() } },
-      { id: 'open-file',      label: 'File Finder',         description: hk.openFileFinder, iconName: 'FolderTree', section: 'Commands', action: () => { document.dispatchEvent(new CustomEvent('acc:open-file-finder')); onClose() } },
-      { id: 'show-shortcuts', label: 'Keyboard Shortcuts',  description: hk.showShortcuts, iconName: 'Keyboard',    section: 'Commands', action: () => { onShowShortcuts?.(); onClose() } },
+    return [
+      { id: 'new-session',    label: 'New Terminal',       description: hk.newSession,    iconName: 'Plus',      section: 'Commands', action: () => { document.dispatchEvent(new CustomEvent('acc:new-session'));       onClose() } },
+      { id: 'open-project',   label: 'Open Folder',        description: hk.openProject,  iconName: 'FolderOpen', section: 'Commands', action: () => { document.dispatchEvent(new CustomEvent('acc:open-project'));     onClose() } },
+      { id: 'open-settings',  label: 'Open Settings',      description: '',              iconName: 'Settings',   section: 'Commands', action: () => { document.dispatchEvent(new CustomEvent('acc:open-settings'));    onClose() } },
+      { id: 'git-review',     label: 'Review Git Changes', description: hk.reviewChanges, iconName: 'GitBranch', section: 'Commands', action: () => { document.dispatchEvent(new CustomEvent('acc:toggle-git-review')); onClose() } },
+      { id: 'show-shortcuts', label: 'Keyboard Shortcuts', description: hk.showShortcuts, iconName: 'Keyboard',  section: 'Commands', action: () => { onShowShortcuts?.(); onClose() } },
     ].filter((a) => !q || a.label.toLowerCase().includes(q))
-
-    const sessionItems: PaletteItem[] = Object.values(sessions)
-      .filter((m) => m.status === 'running' && (!q || m.name.toLowerCase().includes(q)))
-      .map((m) => ({
-        id: `session-${m.sessionId}`,
-        label: m.name,
-        description: m.cwd,
-        iconName: 'Terminal',
-        section: 'Sessions',
-        action: () => {
-          const tabId = findTabForSession(paneTree, m.sessionId)
-          if (tabId) { setActiveSession(tabId); setFocusedSession(m.sessionId) }
-          onClose()
-        }
-      }))
-
-    return [...commands, ...sessionItems]
-  }, [sessions, settings.hotkeys, q, paneTree, setActiveSession, setFocusedSession, onClose, onShowShortcuts])
+  }, [settings.hotkeys, q, onClose, onShowShortcuts])
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (!open) return

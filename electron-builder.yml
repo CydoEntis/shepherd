@@ -36,13 +36,16 @@ mac:
       arch: [x64, arm64]
 
 linux:
-  icon: build/icon.png
+  icon: build/icons
   category: Development
   maintainer: CydoEntis <cydoentis@gmail.com>
   executableName: orbit
   desktop:
     entry:
-      StartupWMClass: Orbit
+      Name: Orbit
+      Comment: Multi-session terminal manager for AI coding agents
+      StartupWMClass: orbit
+      Categories: Development;IDE;
   target:
     - target: AppImage
       arch: [x64]

@@ -1,14 +1,15 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Plus, GripVertical, Pencil, ChevronRight, ArrowRightLeft } from 'lucide-react'
+import { X, Plus, Pencil, ChevronRight, ArrowRightLeft } from 'lucide-react'
 import { useStore } from '../../../store/root.store'
 import { killSession, patchSession } from '../session.service'
 import { detachTab, listWindows, moveToWindow } from '../../window/window.service'
+import { renameEntry, moveFileToWindow } from '../../fs/fs.service'
 import { EditSessionModal } from './EditSessionModal'
 import { cn, normalizePath } from '../../../lib/utils'
 import { ROOT_WORKSPACE_ID } from '@shared/ipc-types'
 import { useLayoutDnd } from '../../layout/dnd/LayoutDndContext'
-import { findTabForSession, collectFileEditorLeaves } from '../../layout/layout-tree'
+import { findTabForSession, collectFileEditorLeaves, findLeafById } from '../../layout/layout-tree'
 import { WindowMoveSubmenu } from '../../window/components/WindowMoveSubmenu'
 import { FileIcon } from '../../fs/components/FileTree'
 
@@ -37,8 +38,11 @@ export function SessionDock({ activeSessionId, onSelectSession, showAddButton = 
   const upsertSession = useStore((s) => s.upsertSession)
   const fileTabs = useStore((s) => s.fileTabs)
   const closeFileTab = useStore((s) => s.closeFileTab)
+  const renameFileTab = useStore((s) => s.renameFileTab)
   const focusedLeafId = useStore((s) => s.focusedLeafId)
   const paneTree = useStore((s) => s.paneTree)
+  const notifications = useStore((s) => s.notifications)
+  const markTabNotificationsRead = useStore((s) => s.markTabNotificationsRead)
 
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
@@ -47,6 +51,9 @@ export function SessionDock({ activeSessionId, onSelectSession, showAddButton = 
   const [otherWindows, setOtherWindows] = useState<{ windowId: string; windowName: string; windowColor: string }[]>([])
   const [showMoveSubmenu, setShowMoveSubmenu] = useState(false)
   const [submenuY, setSubmenuY] = useState(0)
+  const [renamingTabId, setRenamingTabId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const renameInputRef = useRef<HTMLInputElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const moveTriggerRef = useRef<HTMLButtonElement>(null)
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -93,8 +100,12 @@ export function SessionDock({ activeSessionId, onSelectSession, showAddButton = 
     if (!focusedLeafId) return null
     for (const tree of Object.values(paneTree)) {
       if (!tree) continue
-      const leaf = collectFileEditorLeaves(tree).find((l) => l.leafId === focusedLeafId)
-      if (leaf) return normalizePath(leaf.filePath).toLowerCase()
+      const leaf = findLeafById(tree, focusedLeafId)
+      if (leaf?.panel === 'editor-group') {
+        const activeTab = leaf.tabs[leaf.activeIndex] ?? leaf.tabs[0]
+        const fp = activeTab?.kind === 'file' ? activeTab.path : null
+        return fp ? normalizePath(fp).toLowerCase() : null
+      }
     }
     return null
   })()
@@ -123,7 +134,7 @@ export function SessionDock({ activeSessionId, onSelectSession, showAddButton = 
     const m = sessions[id]
     if (isRootWorkspace) {
       if (m.workspaceId) return m.workspaceId === ROOT_WORKSPACE_ID
-      const sessionPath = normalizePath(m.projectRoot ?? m.cwd)
+      const sessionPath = normalizePath(m.cwd)
       return !workspaces.some((w) => {
         if (w.isRoot || !w.rootPath) return false
         const wsPath = normalizePath(w.rootPath)
@@ -132,18 +143,12 @@ export function SessionDock({ activeSessionId, onSelectSession, showAddButton = 
     }
     if (m.workspaceId) return m.workspaceId === activeWorkspaceId
     if (!normalizedActive) return false
-    const root = normalizePath(m.projectRoot ?? m.cwd)
+    const root = normalizePath(m.cwd)
     return root === normalizedActive || root.startsWith(normalizedActive + '/')
   })
 
   const sessionTabSet = new Set(sessionTabs)
-  const allTabIds = tabOrder.filter((id) => {
-    if (sessionTabSet.has(id)) return true
-    const ft = fileTabs[id]
-    if (!ft) return false
-    if (ft.workspaceId) return ft.workspaceId === activeWorkspaceId
-    return isRootWorkspace
-  })
+  const allTabIds = tabOrder.filter((id) => sessionTabSet.has(id))
 
   const handleDragStart = (e: React.DragEvent, id: string): void => {
     setDraggingId(id)
@@ -242,6 +247,35 @@ export function SessionDock({ activeSessionId, onSelectSession, showAddButton = 
     }
   }
 
+  const startFileTabRename = (tabId: string): void => {
+    setCtxMenu(null)
+    const name = fileTabs[tabId]?.name ?? ''
+    setRenameValue(name)
+    setRenamingTabId(tabId)
+    setTimeout(() => { renameInputRef.current?.select() }, 0)
+  }
+
+  const commitFileTabRename = async (tabId: string): Promise<void> => {
+    setRenamingTabId(null)
+    const fileMeta = fileTabs[tabId]
+    const trimmed = renameValue.trim()
+    if (!fileMeta || !trimmed || trimmed === fileMeta.name) return
+    const dir = fileMeta.path.replace(/\\/g, '/').split('/').slice(0, -1).join('/')
+    const newPath = dir + '/' + trimmed
+    try {
+      await renameEntry(fileMeta.path, trimmed)
+      renameFileTab(tabId, newPath)
+    } catch {}
+  }
+
+  const ctxFileMoveToWindow = async (tabId: string, targetWindowId: string | null): Promise<void> => {
+    setCtxMenu(null)
+    const fileMeta = fileTabs[tabId]
+    if (!fileMeta) return
+    try { await moveFileToWindow(fileMeta.path, targetWindowId) } catch {}
+    closeFileTab(tabId)
+  }
+
   return (
     <div className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-transparent overflow-x-auto scrollbar-none w-full min-h-[40px]">
       {allTabIds.map((tabId) => {
@@ -258,16 +292,17 @@ export function SessionDock({ activeSessionId, onSelectSession, showAddButton = 
 
         if (isFileTab && fileMeta) {
           const inSplitGroup = splitFileGroupMap.has(normalizePath(fileMeta.path).toLowerCase())
+          const isRenaming = renamingTabId === tabId
           return (
             <div
               key={tabId}
-              draggable
+              draggable={!isRenaming}
               onDragStart={(e) => handleDragStart(e, tabId)}
               onDragOver={(e) => handleDragOver(e, tabId)}
               onDrop={() => handleDrop(tabId)}
               onDragEnd={cleanup}
               onClick={() => {
-                // If this file is already open as a split in another tab, focus it there
+                if (isRenaming) return
                 const { paneTree: tree, setActiveSession, setFocusedLeaf } = useStore.getState()
                 const norm = normalizePath(fileMeta.path)
                 let focusedElsewhere = false
@@ -288,7 +323,8 @@ export function SessionDock({ activeSessionId, onSelectSession, showAddButton = 
                   setFocusedLeaf(null)
                 }
               }}
-              onContextMenu={(e) => e.preventDefault()}
+              onDoubleClick={(e) => { e.stopPropagation(); startFileTabRename(tabId) }}
+              onContextMenu={(e) => openCtxMenu(e, tabId)}
               className={cn(
                 'relative group flex items-center gap-1.5 px-2.5 py-1 rounded-lg border shadow-sm cursor-pointer transition-all flex-shrink-0 select-none',
                 isActive
@@ -301,13 +337,32 @@ export function SessionDock({ activeSessionId, onSelectSession, showAddButton = 
               <span className="flex-shrink-0 w-3.5 flex items-center">
                 <FileIcon name={fileMeta.name} />
               </span>
-              <span className="text-xs font-medium truncate max-w-[120px]">{fileMeta.name}</span>
-              <button
-                onClick={(e) => { e.stopPropagation(); closeFileTab(tabId) }}
-                className="opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-red-400 transition-all flex-shrink-0 ml-0.5"
-              >
-                <X size={10} />
-              </button>
+              {isRenaming ? (
+                <input
+                  ref={renameInputRef}
+                  autoFocus
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    e.stopPropagation()
+                    if (e.key === 'Enter') void commitFileTabRename(tabId)
+                    else if (e.key === 'Escape') setRenamingTabId(null)
+                  }}
+                  onBlur={() => setRenamingTabId(null)}
+                  onClick={(e) => e.stopPropagation()}
+                  className="bg-transparent border-b border-brand-accent text-xs text-zinc-100 outline-none w-[90px] max-w-[120px]"
+                />
+              ) : (
+                <span className="text-xs font-medium truncate max-w-[120px]">{fileMeta.name}</span>
+              )}
+              {!isRenaming && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); closeFileTab(tabId) }}
+                  className="opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-red-400 transition-all flex-shrink-0 ml-0.5"
+                >
+                  <X size={10} />
+                </button>
+              )}
               {inSplitGroup && (
                 <div className={cn(
                   'absolute bottom-0 left-2 right-2 h-[2px] rounded-full transition-all',
@@ -334,11 +389,12 @@ export function SessionDock({ activeSessionId, onSelectSession, showAddButton = 
               const actualTabId = findTabForSession(paneTree, tabId) ?? tabId
               onSelectSession(actualTabId)
               setFocusedSession(tabId)
+              markTabNotificationsRead(tabId)
             }}
             onDoubleClick={(e) => { e.stopPropagation(); openEdit(tabId) }}
             onContextMenu={(e) => openCtxMenu(e, tabId)}
             className={cn(
-              'group flex items-center gap-1.5 px-2.5 py-1 rounded-lg border shadow-sm cursor-pointer transition-all flex-shrink-0 select-none',
+              'group flex items-center gap-1.5 px-2.5 py-1 rounded-lg border shadow-sm cursor-pointer transition-all flex-shrink-0 select-none min-w-[100px]',
               isActive ? 'text-zinc-100' : 'text-zinc-400 hover:text-zinc-200',
               !isActive && !isOver && 'opacity-50 hover:opacity-75',
               isOver && 'opacity-100 border-brand-accent/70',
@@ -351,20 +407,32 @@ export function SessionDock({ activeSessionId, onSelectSession, showAddButton = 
               ...(!isOver && { borderColor: isActive ? `${color}99` : `${color}33` })
             }}
           >
-            <GripVertical size={10} className="text-zinc-700 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity -ml-0.5" />
             <span
               className="w-2 h-2 rounded-full flex-shrink-0"
               style={{ backgroundColor: isActive ? color : `${color}99` }}
             />
 
-            <span className="text-xs font-medium truncate max-w-[120px]">{meta.name}</span>
+            <span className="text-xs font-medium truncate flex-1 min-w-0">{meta.name}</span>
 
-            {meta.agentStatus === 'running' && (
-              <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse flex-shrink-0" />
-            )}
-            {meta.agentStatus === 'waiting-input' && (
-              <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 flex-shrink-0" />
-            )}
+            {(() => {
+              if (meta.agentStatus === 'running') {
+                return (
+                  <span className="relative flex h-1.5 w-1.5 flex-shrink-0">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-60" style={{ backgroundColor: color }} />
+                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} />
+                  </span>
+                )
+              }
+              const hasUnreadWaiting = notifications.some((n) => !n.read && n.tabId === tabId && n.type === 'agent-waiting')
+              const hasUnreadDone = notifications.some((n) => !n.read && n.tabId === tabId && n.type === 'agent-done')
+              if (meta.agentStatus === 'waiting-input' || hasUnreadWaiting) {
+                return <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse flex-shrink-0" />
+              }
+              if (hasUnreadDone) {
+                return <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" />
+              }
+              return null
+            })()}
 
             <button
               onClick={(e) => void handleClose(e, tabId)}
@@ -399,19 +467,19 @@ export function SessionDock({ activeSessionId, onSelectSession, showAddButton = 
           <div className="fixed inset-0 z-[9998]" onMouseDown={() => setCtxMenu(null)} />
           <div
             ref={menuRef}
-            className="fixed z-[9999] bg-brand-surface border border-brand-panel/60 rounded-lg shadow-xl py-1 min-w-[160px]"
+            className="fixed z-[9999] bg-brand-panel border border-white/10 rounded-lg shadow-2xl shadow-black/60 py-1 min-w-[160px]"
             style={{ left: ctxMenu.pos.x, top: ctxMenu.pos.y }}
           >
-            <button
-              onMouseDown={() => openEdit(ctxMenu.tabId)}
-              className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors"
-            >
-              <Pencil size={11} className="flex-shrink-0" />
-              Edit
-            </button>
-            {sessionTabs.length > 1 && (
+            {fileTabs[ctxMenu.tabId] ? (
               <>
-                <div className="my-1 border-t border-brand-panel/60" />
+                <button
+                  onMouseDown={() => startFileTabRename(ctxMenu.tabId)}
+                  className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/10 hover:text-zinc-100 transition-colors"
+                >
+                  <Pencil size={11} className="flex-shrink-0" />
+                  Rename
+                </button>
+                <div className="my-1 border-t border-white/10" />
                 <button
                   ref={moveTriggerRef}
                   onMouseEnter={() => {
@@ -421,7 +489,7 @@ export function SessionDock({ activeSessionId, onSelectSession, showAddButton = 
                     setShowMoveSubmenu(true)
                   }}
                   onMouseLeave={scheduleHideSubmenu}
-                  className="w-full flex items-center justify-between px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors"
+                  className="w-full flex items-center justify-between px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/10 hover:text-zinc-100 transition-colors"
                 >
                   <span className="flex items-center gap-2.5">
                     <ArrowRightLeft size={11} className="flex-shrink-0" />
@@ -429,26 +497,78 @@ export function SessionDock({ activeSessionId, onSelectSession, showAddButton = 
                   </span>
                   <ChevronRight size={10} className="text-zinc-600" />
                 </button>
+                <div className="my-1 border-t border-white/10" />
+                <button
+                  onMouseDown={() => { setCtxMenu(null); closeFileTab(ctxMenu.tabId) }}
+                  className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-red-400 hover:bg-white/10 hover:text-red-300 transition-colors"
+                >
+                  <X size={11} className="flex-shrink-0" />
+                  Close
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onMouseDown={() => openEdit(ctxMenu.tabId)}
+                  className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/10 hover:text-zinc-100 transition-colors"
+                >
+                  <Pencil size={11} className="flex-shrink-0" />
+                  Edit
+                </button>
+                {sessionTabs.length > 1 && (
+                  <>
+                    <div className="my-1 border-t border-white/10" />
+                    <button
+                      ref={moveTriggerRef}
+                      onMouseEnter={() => {
+                        clearHideTimeout()
+                        const rect = moveTriggerRef.current?.getBoundingClientRect()
+                        if (rect) setSubmenuY(rect.top)
+                        setShowMoveSubmenu(true)
+                      }}
+                      onMouseLeave={scheduleHideSubmenu}
+                      className="w-full flex items-center justify-between px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/10 hover:text-zinc-100 transition-colors"
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <ArrowRightLeft size={11} className="flex-shrink-0" />
+                        Move to
+                      </span>
+                      <ChevronRight size={10} className="text-zinc-600" />
+                    </button>
+                  </>
+                )}
+                <div className="my-1 border-t border-white/10" />
+                <button
+                  onMouseDown={() => void ctxClose(ctxMenu.tabId)}
+                  className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-red-400 hover:bg-white/10 hover:text-red-300 transition-colors"
+                >
+                  <X size={11} className="flex-shrink-0" />
+                  Close Terminal
+                </button>
               </>
             )}
-            <div className="my-1 border-t border-brand-panel/60" />
-            <button
-              onMouseDown={() => void ctxClose(ctxMenu.tabId)}
-              className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-red-400 hover:bg-brand-panel hover:text-red-300 transition-colors"
-            >
-              <X size={11} className="flex-shrink-0" />
-              Close Terminal
-            </button>
           </div>
 
           {showMoveSubmenu && (
             <WindowMoveSubmenu
               style={{ left: getSubmenuX(), top: submenuY }}
               windows={otherWindows}
-              onSelect={(wId) => ctxMoveToWindow(ctxMenu.tabId, wId)}
+              onSelect={(wId) => {
+                if (fileTabs[ctxMenu.tabId]) {
+                  void ctxFileMoveToWindow(ctxMenu.tabId, wId)
+                } else {
+                  ctxMoveToWindow(ctxMenu.tabId, wId)
+                }
+              }}
               onMouseEnter={clearHideTimeout}
               onMouseLeave={scheduleHideSubmenu}
-              onNewWindow={isMainWindow ? () => void ctxNewWindow(ctxMenu.tabId) : undefined}
+              onNewWindow={isMainWindow ? () => {
+                if (fileTabs[ctxMenu.tabId]) {
+                  void ctxFileMoveToWindow(ctxMenu.tabId, null)
+                } else {
+                  void ctxNewWindow(ctxMenu.tabId)
+                }
+              } : undefined}
             />
           )}
         </>,

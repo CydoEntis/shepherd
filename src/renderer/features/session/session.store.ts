@@ -2,12 +2,17 @@ import type { StateCreator } from 'zustand'
 import type { SessionMeta, PersistedLayout } from '@shared/ipc-types'
 import type { RootStore } from '../../store/root.store'
 import {
-  makeTerminalLeaf, makeNotesLeaf, makeMarkdownPreviewLeaf, makeHomeLeaf,
+  makeTerminalLeaf, makeMarkdownPreviewLeaf, makeHomeLeaf,
   makeFileEditorLeaf,
-  splitTerminalLeaf, removeTerminalLeaf,
+  splitTerminalLeaf, splitLeafById, removeTerminalLeaf,
   removeNode, insertAtRight, insertNode, moveNode, replaceNode,
-  collectSessionIds, findTabForSession, findNotesLeafId, hasMarkdownPreviewForNote,
-  findTerminalLeafId,
+  collectSessionIds, findTabForSession, hasMarkdownPreviewForFile,
+  findTerminalLeafId, findLeafById, findMainLeaf,
+  collectFileEditorLeaves,
+  addFileToEditorGroup as addFileToEditorGroupTree,
+  removeFileFromEditorGroup as removeFileFromEditorGroupTree,
+  setEditorGroupActive as setEditorGroupActiveTree,
+  addTerminalToEditorGroup as addTerminalToEditorGroupTree,
 } from '../layout/layout-tree'
 import type { LayoutNode, LayoutLeaf } from '../layout/layout-tree'
 
@@ -37,6 +42,12 @@ export interface SessionSlice {
     direction: 'horizontal' | 'vertical',
     newMeta: SessionMeta
   ) => void
+  splitPaneByLeafId: (
+    tabId: string,
+    leafId: string,
+    direction: 'horizontal' | 'vertical',
+    newMeta: SessionMeta
+  ) => void
   closePane: (tabId: string, sessionId: string) => void
   detachPane: (tabId: string, sessionId: string) => void
   removePaneBySessionId: (sessionId: string) => void
@@ -44,24 +55,28 @@ export interface SessionSlice {
   setIsRestoringLayout: (v: boolean) => void
   restoreTab: (tabId: string, tree: LayoutNode, metas: SessionMeta[]) => void
   openGroupInSplits: (sessionIds: string[]) => void
-  toggleNotesPane: (tabId: string) => void
-  openMarkdownPreviewPane: (noteId: string) => void
+  openMarkdownPreviewPane: (filePath: string) => void
   removeLayoutLeaf: (tabId: string, leafId: string) => void
   insertLayout: (tabId: string, targetLeafId: string, direction: 'horizontal' | 'vertical', newLeaf: LayoutLeaf, side: 'before' | 'after') => void
   moveLayout: (tabId: string, sourceLeafId: string, targetLeafId: string, direction: 'horizontal' | 'vertical', side: 'before' | 'after') => void
   insertSessionIntoLayout: (targetTabId: string, targetLeafId: string, sessionId: string, direction: 'horizontal' | 'vertical', side: 'before' | 'after') => void
   replaceLayoutLeaf: (tabId: string, leafId: string, replacement: LayoutNode) => void
-  updateLeafNoteId: (tabId: string, leafId: string, noteId: string) => void
   insertLayoutAtRight: (tabId: string, newLeaf: LayoutLeaf) => void
   insertSessionAtRight: (targetTabId: string, sessionId: string) => void
   switchPaneSession: (tabId: string, toSessionId: string) => void
-  addNotePaneToLayout: (noteId: string, panel: 'notes' | 'markdown-preview') => void
-  removeNotePaneFromLayout: (noteId: string, panel: 'notes' | 'markdown-preview') => void
-  detachedNoteIds: string[]
-  addDetachedNoteId: (noteId: string) => void
-  removeDetachedNoteId: (noteId: string) => void
   resetRootPane: () => void
   resetAllSessions: () => void
+
+  addFileToEditorGroup: (tabId: string, leafId: string, filePath: string) => void
+  removeFileFromEditorGroup: (tabId: string, leafId: string, fileIndex: number) => void
+  setEditorGroupActive: (tabId: string, leafId: string, index: number) => void
+  openFileInLayout: (filePath: string, displayTabId?: string) => void
+  addTerminalTabToLeaf: (tabId: string, leafId: string, meta: SessionMeta) => void
+  openTerminalInLayout: (tabId: string, meta: SessionMeta) => void
+  reorderTabInEditorGroup: (tabId: string, leafId: string, fromIndex: number, toIndex: number) => void
+  closeNonMainPane: (tabId: string, leafId: string) => void
+  moveEditorTab: (srcTabId: string, srcLeafId: string, tabIndex: number, dstTabId: string, dstLeafId: string, edge?: 'top' | 'bottom' | 'left' | 'right' | null) => void
+
 
   openFilesList: string[]
   addOpenFile: (path: string) => void
@@ -73,6 +88,7 @@ export interface SessionSlice {
   fileTabs: Record<string, { path: string; name: string; workspaceId?: string }>
   openFileTab: (path: string, workspaceId?: string) => void
   closeFileTab: (tabId: string) => void
+  renameFileTab: (tabId: string, newPath: string) => void
 }
 
 export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', never]], [], SessionSlice> = (set) => ({
@@ -84,7 +100,6 @@ export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', neve
   paneTree: { '__root__': makeHomeLeaf() as LayoutNode },
   pendingRestore: null,
   isRestoringLayout: false,
-  detachedNoteIds: [],
   openFilesList: [],
   fileTabs: {},
 
@@ -104,7 +119,7 @@ export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', neve
     set((state) => {
       if (!state.tabOrder.includes(sessionId)) {
         state.tabOrder.push(sessionId)
-        state.paneTree[sessionId] = makeTerminalLeaf(sessionId)
+        state.paneTree[sessionId] = makeTerminalLeaf(sessionId, true)
       }
       state.activeSessionId = sessionId
       state.focusedSessionId = sessionId
@@ -134,6 +149,15 @@ export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', neve
       const tree = state.paneTree[tabId]
       if (tree) {
         state.paneTree[tabId] = splitTerminalLeaf(tree, targetSessionId, direction, newMeta.sessionId)
+      }
+    }),
+
+  splitPaneByLeafId: (tabId, leafId, direction, newMeta) =>
+    set((state) => {
+      state.sessions[newMeta.sessionId] = newMeta
+      const tree = state.paneTree[tabId]
+      if (tree) {
+        state.paneTree[tabId] = splitLeafById(tree, leafId, direction, newMeta.sessionId)
       }
     }),
 
@@ -182,18 +206,22 @@ export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', neve
           delete state.paneTree[tabId]
         }
       } else {
-        // If the remaining tree is a single terminal leaf belonging to another session's
-        // own tab, rescue it back to its own pane tree and leave this tab as home.
-        if (
+        // If the remaining tree is a single editor-group leaf with only one terminal tab
+        // belonging to another session's own tab, rescue it back to its own pane tree.
+        const isSingleTerminalGroup = (
           newTree.type === 'leaf' &&
-          newTree.panel === 'terminal' &&
-          newTree.sessionId !== tabId &&
-          state.tabOrder.includes(newTree.sessionId)
-        ) {
-          state.paneTree[newTree.sessionId] = makeTerminalLeaf(newTree.sessionId)
+          newTree.panel === 'editor-group' &&
+          newTree.tabs.length === 1 &&
+          newTree.tabs[0].kind === 'terminal' &&
+          newTree.tabs[0].sessionId !== tabId &&
+          state.tabOrder.includes(newTree.tabs[0].sessionId)
+        )
+        if (isSingleTerminalGroup && newTree.type === 'leaf' && newTree.panel === 'editor-group' && newTree.tabs[0].kind === 'terminal') {
+          const rescueSessionId = newTree.tabs[0].sessionId
+          state.paneTree[rescueSessionId] = makeTerminalLeaf(rescueSessionId)
           state.paneTree[tabId] = makeHomeLeaf() as LayoutNode
-          state.activeSessionId = newTree.sessionId
-          state.focusedSessionId = newTree.sessionId
+          state.activeSessionId = rescueSessionId
+          state.focusedSessionId = rescueSessionId
         } else {
           state.paneTree[tabId] = newTree
         }
@@ -341,27 +369,14 @@ export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', neve
       if (!state.tabOrder.includes(tabId)) state.tabOrder.push(tabId)
     }),
 
-  toggleNotesPane: (tabId) =>
-    set((state) => {
-      const tree = state.paneTree[tabId]
-      if (!tree) return
-      const notesId = findNotesLeafId(tree)
-      if (notesId) {
-        const newTree = removeNode(tree, notesId)
-        if (newTree) state.paneTree[tabId] = newTree
-      } else {
-        state.paneTree[tabId] = insertAtRight(tree, makeNotesLeaf())
-      }
-    }),
-
-  openMarkdownPreviewPane: (noteId) =>
+  openMarkdownPreviewPane: (filePath) =>
     set((state) => {
       const tabId = state.activeSessionId
       if (!tabId) return
       const tree = state.paneTree[tabId]
       if (!tree) return
-      if (hasMarkdownPreviewForNote(tree, noteId)) return
-      state.paneTree[tabId] = insertAtRight(tree, makeMarkdownPreviewLeaf(noteId))
+      if (hasMarkdownPreviewForFile(tree, filePath)) return
+      state.paneTree[tabId] = insertAtRight(tree, makeMarkdownPreviewLeaf(filePath))
     }),
 
   removeLayoutLeaf: (tabId, leafId) =>
@@ -383,19 +398,6 @@ export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', neve
       const tree = state.paneTree[tabId]
       if (!tree) return
       state.paneTree[tabId] = replaceNode(tree, leafId, replacement)
-    }),
-
-  updateLeafNoteId: (tabId, leafId, noteId) =>
-    set((state) => {
-      const mutate = (node: LayoutNode): void => {
-        if (node.type === 'leaf' && node.id === leafId && (node.panel === 'notes' || node.panel === 'markdown-preview')) {
-          node.noteId = noteId
-        } else if (node.type === 'split') {
-          node.children.forEach(mutate)
-        }
-      }
-      const tree = state.paneTree[tabId]
-      if (tree) mutate(tree)
     }),
 
   insertLayout: (tabId, targetLeafId, direction, newLeaf, side) =>
@@ -480,60 +482,21 @@ export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', neve
     set((state) => {
       const tree = state.paneTree[tabId]
       if (!tree) return
-      // Replace the focused session's pane; fall back to the first terminal in the tab
+      // Find the editor-group leaf that contains the focused session; fall back to first terminal
       const focusedLeafId = state.focusedSessionId ? findTerminalLeafId(tree, state.focusedSessionId) : null
       const leafId = focusedLeafId ?? findTerminalLeafId(tree, collectSessionIds(tree)[0] ?? '')
       if (!leafId) return
-      state.paneTree[tabId] = replaceNode(tree, leafId, makeTerminalLeaf(toSessionId))
+      // Find the leaf and replace the terminal tab with the new sessionId
+      const leaf = findLeafById(tree, leafId)
+      if (!leaf || leaf.panel !== 'editor-group') return
+      const fromSessionId = state.focusedSessionId ?? collectSessionIds(tree)[0]
+      const tabIdx = leaf.tabs.findIndex((t) => t.kind === 'terminal' && t.sessionId === fromSessionId)
+      if (tabIdx === -1) return
+      const newTabs = leaf.tabs.map((t, i): typeof t => i === tabIdx ? { kind: 'terminal', sessionId: toSessionId } : t)
+      const updatedLeaf: LayoutLeaf = { ...leaf, tabs: newTabs }
+      state.paneTree[tabId] = replaceNode(tree, leafId, updatedLeaf)
       state.activeSessionId = tabId
       state.focusedSessionId = toSessionId
-    }),
-
-  addNotePaneToLayout: (noteId, panel) =>
-    set((state) => {
-      const root = state.paneTree['__root__']
-      if (!root) return
-      const alreadyExists = (node: LayoutNode): boolean => {
-        if (node.type === 'leaf') return node.panel === panel && node.noteId === noteId
-        return node.children.some(alreadyExists)
-      }
-      if (alreadyExists(root)) return
-      const leaf = panel === 'notes' ? makeNotesLeaf(noteId) : makeMarkdownPreviewLeaf(noteId)
-      if (root.type === 'leaf' && root.panel === 'home') {
-        state.paneTree['__root__'] = leaf
-      } else {
-        state.paneTree['__root__'] = insertAtRight(root, leaf)
-      }
-      state.focusedLeafId = leaf.id
-    }),
-
-  removeNotePaneFromLayout: (noteId, panel) =>
-    set((state) => {
-      for (const tabId of Object.keys(state.paneTree)) {
-        const tree = state.paneTree[tabId]
-        if (!tree) continue
-        let leafId: string | null = null
-        const findLeaf = (node: LayoutNode): void => {
-          if (node.type === 'leaf' && node.panel === panel && node.noteId === noteId) leafId = node.id
-          else if (node.type === 'split') node.children.forEach(findLeaf)
-        }
-        findLeaf(tree)
-        if (!leafId) continue
-        const newTree = removeNode(tree, leafId)
-        if (newTree) { state.paneTree[tabId] = newTree }
-        else if (tabId === '__root__') { state.paneTree[tabId] = makeHomeLeaf() }
-        return
-      }
-    }),
-
-  addDetachedNoteId: (noteId) =>
-    set((state) => {
-      if (!state.detachedNoteIds.includes(noteId)) state.detachedNoteIds.push(noteId)
-    }),
-
-  removeDetachedNoteId: (noteId) =>
-    set((state) => {
-      state.detachedNoteIds = state.detachedNoteIds.filter((id) => id !== noteId)
     }),
 
   resetRootPane: () =>
@@ -596,32 +559,323 @@ export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', neve
       delete state.fileTabs[tabId]
     }),
 
+  renameFileTab: (tabId, newPath) =>
+    set((state) => {
+      if (!state.fileTabs[tabId]) return
+      const norm = (p: string): string => p.replace(/\\/g, '/')
+      const normPath = norm(newPath)
+      const name = normPath.split('/').pop() ?? normPath
+      state.fileTabs[tabId].path = normPath
+      state.fileTabs[tabId].name = name
+      state.paneTree[tabId] = makeFileEditorLeaf(normPath) as LayoutNode
+    }),
+
   removeFileFromAllLayouts: (filePath) =>
     set((state) => {
+      const norm = (p: string): string => p.replace(/\\/g, '/')
+      const normPath = norm(filePath)
       for (const tabId of Object.keys(state.paneTree)) {
-        const collectLeafIds = (node: LayoutNode): string[] => {
+        // Collect editor-group leaves that contain this file path
+        const collectAffectedLeafIds = (node: LayoutNode): string[] => {
           if (node.type === 'leaf') {
-            return node.panel === 'file-editor' && node.filePath === filePath ? [node.id] : []
+            return node.panel === 'editor-group' && node.tabs.some((t) => t.kind === 'file' && norm(t.path) === normPath)
+              ? [node.id]
+              : []
           }
-          return node.children.flatMap(collectLeafIds)
+          return node.children.flatMap(collectAffectedLeafIds)
         }
-        const leafIds = collectLeafIds(state.paneTree[tabId])
+        const leafIds = collectAffectedLeafIds(state.paneTree[tabId])
         for (const leafId of leafIds) {
           const tree = state.paneTree[tabId]
           if (!tree) break
-          const newTree = removeNode(tree, leafId)
-          if (newTree) {
-            state.paneTree[tabId] = newTree
-          } else if (tabId === '__root__') {
-            state.paneTree[tabId] = makeHomeLeaf()
+          const leaf = tree.type === 'leaf' && tree.id === leafId ? tree
+            : (() => {
+                const found = findLeafById(tree, leafId)
+                return found
+              })()
+          if (!leaf || leaf.panel !== 'editor-group') continue
+          // Find the tab index for this file
+          const tabIdx = leaf.tabs.findIndex((t) => t.kind === 'file' && norm(t.path) === normPath)
+          if (tabIdx === -1) continue
+          if (leaf.tabs.length <= 1) {
+            // Remove the whole leaf
+            const newTree = removeNode(tree, leafId)
+            if (newTree) {
+              state.paneTree[tabId] = newTree
+            } else if (tabId === '__root__') {
+              state.paneTree[tabId] = makeHomeLeaf()
+            } else {
+              state.tabOrder = state.tabOrder.filter((id) => id !== tabId)
+              delete state.paneTree[tabId]
+              if (state.activeSessionId === tabId) state.activeSessionId = state.tabOrder[0] ?? null
+              break
+            }
           } else {
-            state.tabOrder = state.tabOrder.filter((id) => id !== tabId)
-            delete state.paneTree[tabId]
-            if (state.activeSessionId === tabId) state.activeSessionId = state.tabOrder[0] ?? null
-            break
+            const newTree = removeFileFromEditorGroupTree(tree, leafId, tabIdx)
+            if (newTree) state.paneTree[tabId] = newTree
           }
         }
       }
+    }),
+
+  addTerminalTabToLeaf: (tabId, leafId, meta) =>
+    set((state) => {
+      state.sessions[meta.sessionId] = meta
+      const tree = state.paneTree[tabId]
+      if (tree) {
+        state.paneTree[tabId] = addTerminalToEditorGroupTree(tree, leafId, meta.sessionId)
+      }
+      state.focusedSessionId = meta.sessionId
+      state.focusedLeafId = null
+    }),
+
+  addFileToEditorGroup: (tabId, leafId, filePath) =>
+    set((state) => {
+      const tree = state.paneTree[tabId]
+      if (!tree) return
+      state.paneTree[tabId] = addFileToEditorGroupTree(tree, leafId, filePath)
+      if (!state.openFilesList.includes(filePath)) state.openFilesList.push(filePath)
+    }),
+
+  removeFileFromEditorGroup: (tabId, leafId, fileIndex) =>
+    set((state) => {
+      const tree = state.paneTree[tabId]
+      if (!tree) return
+      const newTree = removeFileFromEditorGroupTree(tree, leafId, fileIndex)
+      if (newTree) {
+        state.paneTree[tabId] = newTree
+      } else if (tabId === '__root__') {
+        state.paneTree[tabId] = makeHomeLeaf()
+      } else {
+        delete state.paneTree[tabId]
+      }
+    }),
+
+  setEditorGroupActive: (tabId, leafId, index) =>
+    set((state) => {
+      const tree = state.paneTree[tabId]
+      if (!tree) return
+      state.paneTree[tabId] = setEditorGroupActiveTree(tree, leafId, index)
+    }),
+
+  openFileInLayout: (filePath, displayTabId) =>
+    set((state) => {
+      const norm = (p: string): string => p.replace(/\\/g, '/')
+      const normPath = norm(filePath)
+      const targetTabId = displayTabId ?? state.activeSessionId ?? '__root__'
+
+      const findFirstEditorGroup = (node: LayoutNode): string | null => {
+        if (node.type === 'leaf') return node.panel === 'editor-group' ? node.id : null
+        for (const child of node.children) {
+          const found = findFirstEditorGroup(child)
+          if (found) return found
+        }
+        return null
+      }
+
+      const targetTree = state.paneTree[targetTabId]
+
+      // 1. Already open → switch to it
+      if (targetTree) {
+        const leaves = collectFileEditorLeaves(targetTree)
+        const existing = leaves.find((l) => norm(l.filePath) === normPath)
+        if (existing) {
+          state.focusedLeafId = existing.leafId
+          state.focusedSessionId = null
+          const leaf = findLeafById(targetTree, existing.leafId)
+          if (leaf?.panel === 'editor-group') {
+            const idx = leaf.tabs.findIndex((t) => t.kind === 'file' && norm(t.path) === normPath)
+            if (idx !== -1) state.paneTree[targetTabId] = setEditorGroupActiveTree(targetTree, existing.leafId, idx)
+          }
+          return
+        }
+      }
+
+      // 2. Resolve target leaf: focused file leaf → focused terminal's leaf → first editor-group
+      let targetLeafId: string | null = null
+      if (targetTree) {
+        if (state.focusedLeafId) {
+          const leaf = findLeafById(targetTree, state.focusedLeafId)
+          if (leaf?.panel === 'editor-group') targetLeafId = state.focusedLeafId
+        }
+        if (!targetLeafId && state.focusedSessionId) {
+          targetLeafId = findTerminalLeafId(targetTree, state.focusedSessionId)
+        }
+        if (!targetLeafId) {
+          targetLeafId = findFirstEditorGroup(targetTree)
+        }
+      }
+
+      if (targetLeafId && targetTree) {
+        state.paneTree[targetTabId] = addFileToEditorGroupTree(targetTree, targetLeafId, normPath)
+        state.focusedLeafId = targetLeafId
+        state.focusedSessionId = null
+        if (!state.openFilesList.includes(normPath)) state.openFilesList.push(normPath)
+        return
+      }
+
+      // 3. No editor-group exists → create one (replace home or insert at right)
+      const tree = targetTree ?? (makeHomeLeaf() as LayoutNode)
+      const effectiveTabId = targetTree ? targetTabId : '__root__'
+      const isHome = tree.type === 'leaf' && tree.panel === 'home'
+      const newLeaf = makeFileEditorLeaf(normPath, isHome)
+      state.paneTree[effectiveTabId] = isHome ? (newLeaf as LayoutNode) : insertAtRight(tree, newLeaf)
+      state.focusedLeafId = newLeaf.id
+      state.focusedSessionId = null
+      if (!state.openFilesList.includes(normPath)) state.openFilesList.push(normPath)
+    }),
+
+  reorderTabInEditorGroup: (tabId, leafId, fromIndex, toIndex) =>
+    set((state) => {
+      const tree = state.paneTree[tabId]
+      if (!tree) return
+      const leaf = findLeafById(tree, leafId)
+      if (!leaf || leaf.panel !== 'editor-group' || fromIndex === toIndex) return
+      const tabs = [...leaf.tabs]
+      const [moved] = tabs.splice(fromIndex, 1)
+      tabs.splice(toIndex, 0, moved)
+      const ai = leaf.activeIndex
+      const newActiveIndex =
+        ai === fromIndex ? toIndex :
+        fromIndex < toIndex && ai > fromIndex && ai <= toIndex ? ai - 1 :
+        fromIndex > toIndex && ai < fromIndex && ai >= toIndex ? ai + 1 :
+        ai
+      const updatedLeaf: LayoutLeaf = { ...leaf, tabs, activeIndex: newActiveIndex }
+      state.paneTree[tabId] = replaceNode(tree, leafId, updatedLeaf)
+    }),
+
+  closeNonMainPane: (tabId, leafId) =>
+    set((state) => {
+      const tree = state.paneTree[tabId]
+      if (!tree) return
+      const closingLeaf = findLeafById(tree, leafId)
+      if (!closingLeaf || closingLeaf.panel !== 'editor-group') return
+      const mainLeaf = findMainLeaf(tree)
+      if (!mainLeaf || mainLeaf.id === leafId) {
+        // No main or this IS main — just remove normally
+        const newTree = removeNode(tree, leafId)
+        if (newTree) { state.paneTree[tabId] = newTree }
+        else if (tabId === '__root__') { state.paneTree[tabId] = makeHomeLeaf() }
+        else { delete state.paneTree[tabId] }
+        return
+      }
+      // Migrate tabs to main leaf
+      let updatedTree: LayoutNode = tree
+      for (const tab of closingLeaf.tabs) {
+        if (tab.kind === 'file') updatedTree = addFileToEditorGroupTree(updatedTree, mainLeaf.id, tab.path)
+        else updatedTree = addTerminalToEditorGroupTree(updatedTree, mainLeaf.id, tab.sessionId)
+      }
+      // Remove the closing leaf
+      const finalTree = removeNode(updatedTree, leafId)
+      if (finalTree) { state.paneTree[tabId] = finalTree }
+      else if (tabId === '__root__') { state.paneTree[tabId] = makeHomeLeaf() }
+      else { delete state.paneTree[tabId] }
+      // Focus the last migrated tab in main
+      const lastTab = closingLeaf.tabs[closingLeaf.tabs.length - 1]
+      if (lastTab?.kind === 'terminal') { state.focusedSessionId = lastTab.sessionId; state.focusedLeafId = null }
+      else { state.focusedLeafId = mainLeaf.id; state.focusedSessionId = null }
+    }),
+
+  moveEditorTab: (srcTabId, srcLeafId, tabIndex, dstTabId, dstLeafId, edge) =>
+    set((state) => {
+      const srcTree = state.paneTree[srcTabId]
+      if (!srcTree) return
+      const srcLeaf = findLeafById(srcTree, srcLeafId)
+      if (!srcLeaf || srcLeaf.panel !== 'editor-group') return
+      const tab = srcLeaf.tabs[tabIndex]
+      if (!tab) return
+      if (srcLeafId === dstLeafId && !edge) return
+
+      // Step 1: Remove tab from source
+      const newSrcTabs = srcLeaf.tabs.filter((_, i) => i !== tabIndex)
+      if (newSrcTabs.length === 0) {
+        if (srcLeaf.isMain) {
+          state.paneTree[srcTabId] = replaceNode(srcTree, srcLeafId, makeHomeLeaf())
+        } else {
+          const collapsed = removeNode(srcTree, srcLeafId)
+          if (collapsed) { state.paneTree[srcTabId] = collapsed }
+          else if (srcTabId === '__root__') { state.paneTree[srcTabId] = makeHomeLeaf() as LayoutNode }
+          else { delete state.paneTree[srcTabId] }
+        }
+      } else {
+        const updatedSrcLeaf: LayoutLeaf = { ...srcLeaf, tabs: newSrcTabs, activeIndex: Math.min(srcLeaf.activeIndex, newSrcTabs.length - 1) }
+        state.paneTree[srcTabId] = replaceNode(srcTree, srcLeafId, updatedSrcLeaf)
+      }
+
+      // Step 2: Add to destination (re-fetch tree — may have changed if same tabId)
+      const dstTree = state.paneTree[dstTabId]
+      if (!dstTree) return
+      if (!edge) {
+        if (tab.kind === 'file') state.paneTree[dstTabId] = addFileToEditorGroupTree(dstTree, dstLeafId, tab.path)
+        else state.paneTree[dstTabId] = addTerminalToEditorGroupTree(dstTree, dstLeafId, tab.sessionId)
+        state.focusedLeafId = dstLeafId
+      } else {
+        const newLeaf = tab.kind === 'file' ? makeFileEditorLeaf(tab.path) : makeTerminalLeaf(tab.sessionId)
+        const direction = (edge === 'left' || edge === 'right') ? 'horizontal' : 'vertical'
+        const sidePl: 'before' | 'after' = (edge === 'right' || edge === 'bottom') ? 'after' : 'before'
+        state.paneTree[dstTabId] = insertNode(dstTree, dstLeafId, direction, newLeaf, sidePl)
+        state.focusedLeafId = newLeaf.id
+      }
+      if (tab.kind === 'terminal') { state.focusedSessionId = tab.sessionId; state.focusedLeafId = null }
+      else { state.focusedSessionId = null }
+    }),
+
+  openTerminalInLayout: (tabId, meta) =>
+    set((state) => {
+      state.sessions[meta.sessionId] = meta
+      const tree = state.paneTree[tabId]
+
+      // Helper: find first editor-group leaf id in a tree
+      const findFirstEditorGroup = (node: LayoutNode): string | null => {
+        if (node.type === 'leaf') return node.panel === 'editor-group' ? node.id : null
+        for (const child of node.children) {
+          const found = findFirstEditorGroup(child)
+          if (found) return found
+        }
+        return null
+      }
+
+      if (!tree) {
+        // No pane tree at all — create one
+        state.paneTree[tabId] = makeTerminalLeaf(meta.sessionId) as LayoutNode
+        state.focusedSessionId = meta.sessionId
+        return
+      }
+
+      // Try focused leaf first (file-focused), then focused session's leaf (terminal-focused)
+      if (state.focusedLeafId) {
+        const leaf = findLeafById(tree, state.focusedLeafId)
+        if (leaf?.panel === 'editor-group') {
+          state.paneTree[tabId] = addTerminalToEditorGroupTree(tree, state.focusedLeafId, meta.sessionId)
+          state.focusedSessionId = meta.sessionId
+          state.focusedLeafId = null
+          return
+        }
+      }
+      if (state.focusedSessionId) {
+        const termLeafId = findTerminalLeafId(tree, state.focusedSessionId)
+        if (termLeafId) {
+          state.paneTree[tabId] = addTerminalToEditorGroupTree(tree, termLeafId, meta.sessionId)
+          state.focusedSessionId = meta.sessionId
+          return
+        }
+      }
+
+      // Try first editor-group in the tree
+      const firstLeafId = findFirstEditorGroup(tree)
+      if (firstLeafId) {
+        state.paneTree[tabId] = addTerminalToEditorGroupTree(tree, firstLeafId, meta.sessionId)
+        state.focusedSessionId = meta.sessionId
+        return
+      }
+
+      // Replace home leaf or insert at right
+      const isFirst = tree.type === 'leaf' && tree.panel === 'home'
+      const newTermLeaf = makeTerminalLeaf(meta.sessionId, isFirst)
+      state.paneTree[tabId] = isFirst
+        ? (newTermLeaf as LayoutNode)
+        : insertAtRight(tree, newTermLeaf)
+      state.focusedSessionId = meta.sessionId
     }),
 
 })

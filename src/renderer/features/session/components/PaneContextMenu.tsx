@@ -32,7 +32,7 @@ function MenuItem({
     <button
       onClick={onClick}
       className={cn(
-        'w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors text-left',
+        'w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/10 hover:text-zinc-100 transition-colors text-left',
         className
       )}
     >
@@ -54,17 +54,17 @@ export function PaneContextMenu({ x, y, isMainWindow, onDismiss, onSplitH, onSpl
     <div
       ref={menuRef}
       style={{ position: 'fixed', top: adjustedY, left: adjustedX, zIndex: 9999 }}
-      className="bg-brand-surface border border-brand-panel/60 rounded-md shadow-2xl py-1 w-48"
+      className="bg-brand-panel border border-white/10 rounded-md shadow-2xl shadow-black/60 py-1 w-48"
       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation() }}
     >
       <MenuItem icon={<Columns2 size={12} />} label="Split Horizontal" onClick={() => { onSplitH(); onDismiss() }} />
       <MenuItem icon={<Rows2 size={12} />} label="Split Vertical" onClick={() => { onSplitV(); onDismiss() }} />
-      <div className="h-px bg-brand-panel my-1" />
+      <div className="h-px bg-white/10 my-1" />
       {isMainWindow
         ? <MenuItem icon={<ExternalLink size={12} />} label="Detach to Window" onClick={() => { onDetach(); onDismiss() }} />
         : <MenuItem icon={<PanelLeftOpen size={12} />} label="Reattach to Main" onClick={() => { onReattach(); onDismiss() }} />
       }
-      <div className="h-px bg-brand-panel my-1" />
+      <div className="h-px bg-white/10 my-1" />
       <MenuItem
         icon={<X size={12} />}
         label="Close Pane"

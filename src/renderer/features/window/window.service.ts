@@ -2,10 +2,6 @@ import { ipc } from '../../lib/ipc'
 import { IPC } from '@shared/ipc-channels'
 import type { DetachTabResponse, WindowControlAction } from '@shared/ipc-types'
 
-export async function detachNotePreview(noteId: string, fromWindowId: string): Promise<{ newWindowId: string }> {
-  return ipc.invoke(IPC.WINDOW_DETACH_NOTE_PREVIEW, { noteId, fromWindowId }) as Promise<{ newWindowId: string }>
-}
-
 export async function getWindowId(): Promise<string> {
   const res = (await ipc.invoke(IPC.WINDOW_GET_ID)) as { windowId: string }
   return res.windowId
@@ -53,16 +49,4 @@ export async function setWindowMeta(name: string, color: string): Promise<void> 
 
 export async function moveToWindow(sessionId: string, targetWindowId: string): Promise<void> {
   await ipc.invoke(IPC.WINDOW_MOVE_TO_WINDOW, { sessionId, targetWindowId })
-}
-
-export async function detachNotePane(noteId: string, panel: 'notes' | 'markdown-preview'): Promise<{ newWindowId: string }> {
-  return ipc.invoke(IPC.WINDOW_DETACH_NOTE_PANE, { noteId, panel }) as Promise<{ newWindowId: string }>
-}
-
-export async function reattachNotePane(noteId: string, panel: 'notes' | 'markdown-preview'): Promise<void> {
-  await ipc.invoke(IPC.WINDOW_REATTACH_NOTE_PANE, { noteId, panel })
-}
-
-export async function moveNotePaneToWindow(noteId: string, panel: 'notes' | 'markdown-preview', targetWindowId: string): Promise<void> {
-  await ipc.invoke(IPC.WINDOW_MOVE_NOTE_PANE, { noteId, panel, targetWindowId })
 }

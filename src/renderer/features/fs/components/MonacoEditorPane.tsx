@@ -2,9 +2,12 @@ import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import Editor from '@monaco-editor/react'
 import type { OnMount, BeforeMount } from '@monaco-editor/react'
-import { Save, ChevronRight } from 'lucide-react'
-import { readFile, writeFile, showInFolder, openInEditor } from '../fs.service'
+import { Save, ChevronRight, ArrowRightLeft } from 'lucide-react'
+import { readFile, writeFile, showInFolder, openInEditor, moveFileToWindow } from '../fs.service'
+import { makeMarkdownPreviewLeaf } from '../../layout/layout-tree'
 import { useInstalledEditors } from '../hooks/useInstalledEditors'
+import { listWindows } from '../../window/window.service'
+import { WindowMoveSubmenu } from '../../window/components/WindowMoveSubmenu'
 import { useStore } from '../../../store/root.store'
 import { cn } from '../../../lib/utils'
 import { toast } from 'sonner'
@@ -210,13 +213,13 @@ function CtxSubMenu({ label, children }: { label: string; children: React.ReactN
 
   return (
     <div ref={triggerRef} className="relative" onMouseEnter={handleMouseEnter} onMouseLeave={() => setOpen(false)}>
-      <button className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors text-left">
+      <button className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/10 hover:text-zinc-100 transition-colors text-left">
         <span className="flex-1">{label}</span>
         <ChevronRight size={10} className="text-zinc-500 flex-shrink-0" />
       </button>
       {open && (
         <div className={cn(
-          'absolute top-0 -mt-1 z-[10000] bg-brand-surface border border-brand-panel/60 rounded-md shadow-2xl py-1 min-w-[140px]',
+          'absolute top-0 -mt-1 z-[10000] bg-brand-panel border border-white/10 rounded-md shadow-2xl shadow-black/60 py-1 min-w-[140px]',
           flipLeft ? 'right-full mr-0.5' : 'left-full ml-0.5'
         )}>
           {children}
@@ -231,7 +234,7 @@ function CtxItem({ label, hint, disabled, onClick }: { label: string; hint?: str
     <button
       onClick={onClick}
       disabled={disabled}
-      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors text-left disabled:opacity-40 disabled:cursor-default"
+      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/10 hover:text-zinc-100 transition-colors text-left disabled:opacity-40 disabled:cursor-default"
     >
       <span className="flex-1">{label}</span>
       {hint && <span className="text-zinc-600 flex-shrink-0">{hint}</span>}
@@ -252,19 +255,57 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
   const [saving, setSaving] = useState(false)
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
   const [pendingClose, setPendingClose] = useState(false)
+  const [otherWindows, setOtherWindows] = useState<{ windowId: string; windowName: string; windowColor: string }[]>([])
+  const [showMoveSubmenu, setShowMoveSubmenu] = useState(false)
+  const [submenuY, setSubmenuY] = useState(0)
   const editorRef = useRef<EditorInstance | null>(null)
   const monacoRef = useRef<MonacoInstance | null>(null)
+  const ctxMenuRef = useRef<HTMLDivElement>(null)
+  const moveTriggerRef = useRef<HTMLButtonElement>(null)
+  const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const removeLayoutLeaf = useStore((s) => s.removeLayoutLeaf)
+  const closeFileTab = useStore((s) => s.closeFileTab)
   const updateSettings = useStore((s) => s.updateSettings)
+  const insertLayoutAtRight = useStore((s) => s.insertLayoutAtRight)
+  const setFocusedLeaf = useStore((s) => s.setFocusedLeaf)
 
   const handleClose = (): void => {
     if (dirty) { setPendingClose(true); return }
     removeLayoutLeaf(tabId, leafId)
   }
+
+  useEffect(() => {
+    if (!ctxMenu) { setShowMoveSubmenu(false); return }
+    listWindows().then((wins) => setOtherWindows(wins.map((w) => ({ windowId: w.windowId, windowName: w.windowName, windowColor: w.windowColor })))).catch(() => {})
+    return () => { if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current) }
+  }, [ctxMenu])
+
+  const clearHide = (): void => { if (hideTimeoutRef.current) { clearTimeout(hideTimeoutRef.current); hideTimeoutRef.current = null } }
+  const scheduleHide = (): void => { clearHide(); hideTimeoutRef.current = setTimeout(() => setShowMoveSubmenu(false), 150) }
+  const getSubmenuX = (): number => {
+    const w = ctxMenuRef.current?.offsetWidth ?? 208
+    const sub = 140
+    const mx = ctxMenu?.x ?? 0
+    const rx = Math.min(mx, window.innerWidth - 220) + w + 4
+    return rx + sub > window.innerWidth ? Math.min(mx, window.innerWidth - 220) - sub - 4 : rx
+  }
+
+  const handleMoveToWindow = async (targetWindowId: string | null): Promise<void> => {
+    setCtxMenu(null)
+    setShowMoveSubmenu(false)
+    try { await moveFileToWindow(currentPath, targetWindowId) } catch {}
+    // Close the whole file tab if this pane IS the top-level file tab; otherwise just remove the leaf.
+    const state = useStore.getState()
+    if (state.fileTabs[tabId]) {
+      state.closeFileTab(tabId)
+    } else {
+      removeLayoutLeaf(tabId, leafId)
+    }
+  }
+
   const theme = useStore((s) => s.settings.theme)
   const editorFontSize = useStore((s) => s.settings.editorFontSize ?? 13)
   const editors = useInstalledEditors()
-  const ctxRef = useRef<HTMLDivElement>(null)
 
   const autoTheme: MonacoThemeId = ((): MonacoThemeId => {
     switch (theme) {
@@ -344,7 +385,7 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
   useEffect(() => {
     if (!ctxMenu) return
     const handler = (e: MouseEvent): void => {
-      if (ctxRef.current && !ctxRef.current.contains(e.target as Node)) setCtxMenu(null)
+      if (ctxMenuRef.current && !ctxMenuRef.current.contains(e.target as Node)) { setCtxMenu(null); setShowMoveSubmenu(false) }
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
@@ -437,37 +478,78 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
 
       {/* Right-click context menu */}
       {ctxMenu && createPortal(
-        <div
-          ref={ctxRef}
-          style={{ position: 'fixed', top: ctxY, left: ctxX, zIndex: 9999 }}
-          className="bg-brand-surface border border-brand-panel/60 rounded-md shadow-2xl py-1 w-52"
-          onContextMenu={(e) => e.preventDefault()}
-        >
-          <CtxItem label="Save" hint="Ctrl+S" disabled={!dirty} onClick={() => { void handleSave(); setCtxMenu(null) }} />
-          <div className="h-px bg-brand-panel my-1" />
-          <CtxItem label="Cut"   hint="Ctrl+X" onClick={() => handleClipboard('cut')} />
-          <CtxItem label="Copy"  hint="Ctrl+C" onClick={() => handleClipboard('copy')} />
-          <CtxItem label="Paste" hint="Ctrl+V" onClick={() => handleClipboard('paste')} />
-          <div className="h-px bg-brand-panel my-1" />
-          <CtxItem label="Format Document" hint="Shift+Alt+F" onClick={() => handleEditorAction('editor.action.formatDocument')} />
-          <div className="h-px bg-brand-panel my-1" />
-          <CtxItem label="Reveal in Explorer" onClick={() => { showInFolder(currentPath).catch(() => {}); setCtxMenu(null) }} />
-          {editors.length > 0 && (
-            <CtxSubMenu label="Open in">
-              {editors.map((ed) => (
-                <button
-                  key={ed.command}
-                  onClick={() => { openInEditor(ed.command, currentPath).catch(() => {}); setCtxMenu(null) }}
-                  className="w-full flex items-center px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors text-left"
-                >
-                  {ed.name}
-                </button>
-              ))}
-            </CtxSubMenu>
+        <>
+          <div
+            ref={ctxMenuRef}
+            style={{ position: 'fixed', top: ctxY, left: ctxX, zIndex: 9999 }}
+            className="bg-brand-panel border border-white/10 rounded-md shadow-2xl shadow-black/60 py-1 w-52"
+            onContextMenu={(e) => e.preventDefault()}
+          >
+            <CtxItem label="Save" hint="Ctrl+S" disabled={!dirty} onClick={() => { void handleSave(); setCtxMenu(null) }} />
+            <div className="h-px bg-white/10 my-1" />
+            <CtxItem label="Cut"   hint="Ctrl+X" onClick={() => handleClipboard('cut')} />
+            <CtxItem label="Copy"  hint="Ctrl+C" onClick={() => handleClipboard('copy')} />
+            <CtxItem label="Paste" hint="Ctrl+V" onClick={() => handleClipboard('paste')} />
+            <div className="h-px bg-white/10 my-1" />
+            <CtxItem label="Format Document" hint="Shift+Alt+F" onClick={() => handleEditorAction('editor.action.formatDocument')} />
+            {currentPath.endsWith('.md') && (
+              <CtxItem
+                label="Preview"
+                onClick={() => {
+                  const leaf = makeMarkdownPreviewLeaf(currentPath)
+                  insertLayoutAtRight(tabId, leaf)
+                  setFocusedLeaf(leaf.id)
+                  setCtxMenu(null)
+                }}
+              />
+            )}
+            <div className="h-px bg-white/10 my-1" />
+            <CtxItem label="Reveal in Explorer" onClick={() => { showInFolder(currentPath).catch(() => {}); setCtxMenu(null) }} />
+            {editors.length > 0 && (
+              <CtxSubMenu label="Open in">
+                {editors.map((ed) => (
+                  <button
+                    key={ed.command}
+                    onClick={() => { openInEditor(ed.command, currentPath).catch(() => {}); setCtxMenu(null) }}
+                    className="w-full flex items-center px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/10 hover:text-zinc-100 transition-colors text-left"
+                  >
+                    {ed.name}
+                  </button>
+                ))}
+              </CtxSubMenu>
+            )}
+            <div className="h-px bg-white/10 my-1" />
+            <button
+              ref={moveTriggerRef}
+              onMouseEnter={() => {
+                clearHide()
+                const rect = moveTriggerRef.current?.getBoundingClientRect()
+                if (rect) setSubmenuY(rect.top)
+                setShowMoveSubmenu(true)
+              }}
+              onMouseLeave={scheduleHide}
+              className="w-full flex items-center justify-between px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/10 hover:text-zinc-100 transition-colors"
+            >
+              <span className="flex items-center gap-2">
+                <ArrowRightLeft size={12} className="flex-shrink-0" />
+                Move to
+              </span>
+              <ChevronRight size={10} className="text-zinc-600" />
+            </button>
+            <div className="h-px bg-white/10 my-1" />
+            <CtxItem label="Close Pane" onClick={() => { handleClose(); setCtxMenu(null) }} />
+          </div>
+          {showMoveSubmenu && (
+            <WindowMoveSubmenu
+              style={{ left: getSubmenuX(), top: submenuY }}
+              windows={otherWindows}
+              onSelect={(wId) => void handleMoveToWindow(wId)}
+              onMouseEnter={clearHide}
+              onMouseLeave={scheduleHide}
+              onNewWindow={() => void handleMoveToWindow(null)}
+            />
           )}
-          <div className="h-px bg-brand-panel my-1" />
-          <CtxItem label="Close Pane" onClick={() => { handleClose(); setCtxMenu(null) }} />
-        </div>,
+        </>,
         document.body
       )}
 
@@ -477,16 +559,18 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
           onMouseDown={(e) => { if (e.target === e.currentTarget) setPendingClose(false) }}
         >
           <div className="absolute inset-0 bg-black/50" />
-          <div className="relative bg-brand-surface border border-brand-panel/60 rounded-lg shadow-2xl w-80 p-5 flex flex-col gap-4">
-            <span className="text-sm font-semibold text-zinc-200">Unsaved Changes</span>
-            <p className="text-xs text-zinc-400">
+          <div className="relative bg-brand-surface border border-white/10 rounded-lg shadow-2xl shadow-black/70 w-80 flex flex-col overflow-hidden">
+            <div className="px-5 py-4 border-b border-white/8">
+              <span className="text-sm font-semibold text-zinc-200">Unsaved Changes</span>
+            </div>
+            <p className="text-xs text-zinc-400 px-5 py-4">
               <span className="text-zinc-200 font-medium">{currentPath.replace(/\\/g, '/').split('/').pop()}</span>
               {' '}has unsaved changes. Close without saving?
             </p>
-            <div className="flex gap-2 justify-end">
+            <div className="flex gap-2 justify-end px-5 py-3 border-t border-white/8">
               <button
                 onClick={() => setPendingClose(false)}
-                className="px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors rounded border border-brand-panel hover:border-zinc-600"
+                className="px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors rounded border border-white/10 hover:border-zinc-600"
               >
                 Cancel
               </button>

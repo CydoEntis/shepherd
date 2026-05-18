@@ -1,7 +1,7 @@
 import { ipcMain, BrowserWindow, dialog } from 'electron'
 import { IPC } from '@shared/ipc-channels'
-import type { DetachTabPayload, DetachNotePreviewPayload, WindowControlAction } from '@shared/ipc-types'
-import { detachTab, detachNotePreview, detachNotePane, reattachNotePaneToMain, moveNotePaneToWindow, reattachTab, moveTabToWindow, findWindowForSession, getWindowList, getWindow, focusWindow, openSettingsWindow, highlightWindow, setWindowMeta, isMainWindow } from '../../window-manager'
+import type { DetachTabPayload, WindowControlAction } from '@shared/ipc-types'
+import { detachTab, reattachTab, moveTabToWindow, moveFileToWindow, getPendingFileOpens, findWindowForSession, getWindowList, getWindow, focusWindow, openSettingsWindow, highlightWindow, setWindowMeta, isMainWindow } from '../../window-manager'
 
 export function registerWindowIpc(): void {
   ipcMain.handle(IPC.WINDOW_GET_ID, (event) => {
@@ -15,30 +15,6 @@ export function registerWindowIpc(): void {
     const fromWindowId = win ? String(win.id) : payload.fromWindowId
     const newWindowId = detachTab(payload.sessionId, fromWindowId)
     return { newWindowId }
-  })
-
-  ipcMain.handle(IPC.WINDOW_DETACH_NOTE_PREVIEW, (_event, payload: DetachNotePreviewPayload) => {
-    const newWindowId = detachNotePreview(payload.noteId)
-    return { newWindowId }
-  })
-
-  ipcMain.handle(IPC.WINDOW_DETACH_NOTE_PANE, (event, payload: { noteId: string; panel: 'notes' | 'markdown-preview' }) => {
-    const newWindowId = detachNotePane(payload.noteId, payload.panel)
-    return { newWindowId }
-  })
-
-  ipcMain.handle(IPC.WINDOW_REATTACH_NOTE_PANE, (event, payload: { noteId: string; panel: 'notes' | 'markdown-preview' }) => {
-    const win = BrowserWindow.fromWebContents(event.sender)
-    const fromWindowId = win ? String(win.id) : ''
-    reattachNotePaneToMain(payload.noteId, payload.panel, fromWindowId)
-    return { ok: true }
-  })
-
-  ipcMain.handle(IPC.WINDOW_MOVE_NOTE_PANE, (event, payload: { noteId: string; panel: 'notes' | 'markdown-preview'; targetWindowId: string }) => {
-    const win = BrowserWindow.fromWebContents(event.sender)
-    const fromWindowId = win ? String(win.id) : ''
-    moveNotePaneToWindow(payload.noteId, payload.panel, fromWindowId, payload.targetWindowId)
-    return { ok: true }
   })
 
   ipcMain.handle(IPC.WINDOW_REATTACH_TAB, (event, payload: { sessionId: string; fromWindowId?: string }) => {
@@ -95,6 +71,21 @@ export function registerWindowIpc(): void {
     if (!targetWindowId) return { ok: false }
     moveTabToWindow(payload.sessionId, fromWindowId, targetWindowId)
     return { ok: true }
+  })
+
+  ipcMain.handle(IPC.FS_MOVE_FILE_TO_WINDOW, (event, payload: { filePath: string; targetWindowId: string | null; workspaceId?: string }) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const fromWindowId = win ? String(win.id) : null
+    if (!fromWindowId) return { ok: false }
+    moveFileToWindow(payload.filePath, fromWindowId, payload.targetWindowId, payload.workspaceId)
+    return { ok: true }
+  })
+
+  ipcMain.handle(IPC.FS_GET_PENDING_FILES, (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const windowId = win ? String(win.id) : null
+    if (!windowId) return []
+    return getPendingFileOpens(windowId)
   })
 
   ipcMain.handle(IPC.DIALOG_PICK_FOLDER, async (event) => {

@@ -1,17 +1,14 @@
 ﻿import { createPortal } from 'react-dom'
-import { Search, Terminal, Plus, FolderOpen, FolderTree, NotebookPen, Settings, GitBranch } from 'lucide-react'
+import { Search, Plus, FolderOpen, Settings, GitBranch } from 'lucide-react'
 import { useCommandPalette } from '../features/session/hooks/useCommandPalette'
 import { cn } from '../lib/utils'
 
 const ICON_MAP: Record<string, JSX.Element> = {
-  Terminal:    <Terminal size={12} />,
-  Plus:        <Plus size={12} />,
-  FolderOpen:  <FolderOpen size={12} />,
-  FolderTree:  <FolderTree size={12} />,
-  NotebookPen: <NotebookPen size={12} />,
-  Settings:    <Settings size={12} />,
-  GitBranch:   <GitBranch size={12} />,
-  Keyboard:    <span className="text-[10px] font-mono">⌨</span>,
+  Plus:       <Plus size={12} />,
+  FolderOpen: <FolderOpen size={12} />,
+  Settings:   <Settings size={12} />,
+  GitBranch:  <GitBranch size={12} />,
+  Keyboard:   <span className="text-[10px] font-mono">⌨</span>,
 }
 
 interface Props {
@@ -40,7 +37,7 @@ export function CommandPalette({ open, onClose, onShowShortcuts }: Props): JSX.E
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search commands, sessions…"
+            placeholder="Search commands…"
             className="bg-transparent text-sm text-zinc-100 placeholder:text-zinc-500 outline-none flex-1"
           />
           <kbd className="text-[10px] text-zinc-600 border border-brand-panel rounded px-1.5 py-0.5">Esc</kbd>

@@ -3,13 +3,12 @@ import { toast } from 'sonner'
 import { ipc } from '../../../lib/ipc'
 import { IPC } from '@shared/ipc-channels'
 import { useStore } from '../../../store/root.store'
-import { listSessions, createSession, killSession, patchSession } from '../session.service'
-import { getWindowInfo, pickFolder } from '../../window/window.service'
+import { listSessions, createSession, patchSession, SESSION_COLORS } from '../session.service'
+import { getWindowInfo } from '../../window/window.service'
 import { normalizePath } from '../../../lib/utils'
 import { findTabForSession, collectSessionIds } from '../../layout/layout-tree'
-import type { LayoutNode } from '../../layout/layout-tree'
 import { DEFAULT_COLS, DEFAULT_ROWS } from '@shared/constants'
-import type { SessionMeta, SessionExitPayload, WindowInitialSessionsPayload, TabReattachedPayload, NotePanePayload } from '@shared/ipc-types'
+import type { SessionMeta, SessionExitPayload, WindowInitialSessionsPayload, TabReattachedPayload } from '@shared/ipc-types'
 
 export function useSessionLifecycle(): void {
   const upsertSession = useStore((s) => s.upsertSession)
@@ -23,10 +22,6 @@ export function useSessionLifecycle(): void {
   const setWindowMeta = useStore((s) => s.setWindowMeta)
   const setWindowHighlighted = useStore((s) => s.setWindowHighlighted)
   const setTotalWindowCount = useStore((s) => s.setTotalWindowCount)
-  const addNotePaneToLayout = useStore((s) => s.addNotePaneToLayout)
-  const removeNotePaneFromLayout = useStore((s) => s.removeNotePaneFromLayout)
-  const addDetachedNoteId = useStore((s) => s.addDetachedNoteId)
-  const removeDetachedNoteId = useStore((s) => s.removeDetachedNoteId)
   const isMainRef = useRef<boolean | null>(null)
   // Tracks running sessions found at startup — 'pending' until listSessions resolves
   const liveSessionsRef = useRef<SessionMeta[] | 'pending'>('pending')
@@ -46,7 +41,7 @@ export function useSessionLifecycle(): void {
         addTab(m.sessionId)
         // Migrate untagged sessions: tag them with any matching named workspace
         if (!m.workspaceId) {
-          const sessionPath = normalizePath(m.projectRoot ?? m.cwd)
+          const sessionPath = normalizePath(m.cwd)
           const matchingWs = workspaces.find((w) => {
             if (w.isRoot || !w.rootPath) return false
             const wsPath = normalizePath(w.rootPath)
@@ -97,17 +92,34 @@ export function useSessionLifecycle(): void {
       const { sessions, paneTree, activeSessionId } = useStore.getState()
       const prev = sessions[meta.sessionId]
 
-      if (prev?.agentStatus === 'running' && meta.agentStatus === 'waiting-input' && meta.agentCommand) {
-        const tabId = findTabForSession(paneTree, meta.sessionId)
-        if (tabId) {
-          useStore.getState().addNotification({ type: 'agent-done', title: `${meta.name} is awaiting input`, tabId })
-          const isBackground = tabId !== activeSessionId
-          toast.success(
-            `${meta.name} is awaiting input`,
-            isBackground
-              ? { action: { label: 'Switch', onClick: () => useStore.getState().setActiveSession(tabId) } }
-              : undefined
-          )
+      if (prev?.agentStatus === 'running' && meta.agentCommand) {
+        const toastsEnabled = useStore.getState().settings.showAgentToasts ?? true
+        if (meta.agentStatus === 'done') {
+          const tabId = findTabForSession(paneTree, meta.sessionId)
+          if (tabId) {
+            const isBackground = tabId !== activeSessionId
+            useStore.getState().addNotification({ type: 'agent-done', title: `${meta.name} finished`, tabId })
+            if (!isBackground) useStore.getState().markTabNotificationsRead(tabId)
+            if (toastsEnabled) toast.success(
+              `${meta.name} finished`,
+              isBackground
+                ? { action: { label: 'Switch', onClick: () => useStore.getState().setActiveSession(tabId) } }
+                : undefined
+            )
+          }
+        } else if (meta.agentStatus === 'waiting-input') {
+          const tabId = findTabForSession(paneTree, meta.sessionId)
+          if (tabId) {
+            const isBackground = tabId !== activeSessionId
+            useStore.getState().addNotification({ type: 'agent-waiting', title: `${meta.name} is awaiting input`, tabId })
+            if (!isBackground) useStore.getState().markTabNotificationsRead(tabId)
+            if (toastsEnabled) toast.warning(
+              `${meta.name} is awaiting input`,
+              isBackground
+                ? { action: { label: 'Switch', onClick: () => useStore.getState().setActiveSession(tabId) } }
+                : undefined
+            )
+          }
         }
       }
 
@@ -188,85 +200,44 @@ export function useSessionLifecycle(): void {
       void loadSettings()
     })
 
-    const offInitialNotPane = ipc.on(IPC.WINDOW_INITIAL_NOTE_PANE, (payload) => {
-      const { noteId, panel } = payload as NotePanePayload
-      addNotePaneToLayout(noteId, panel)
-    })
-
-    const offNotePaneReattached = ipc.on(IPC.WINDOW_NOTE_PANE_REATTACHED, (payload) => {
-      const { noteId, panel } = payload as NotePanePayload
-      removeDetachedNoteId(noteId)
-      addNotePaneToLayout(noteId, panel)
-    })
-
-    const offAddNotePane = ipc.on(IPC.WINDOW_ADD_NOTE_PANE, (payload) => {
-      const { noteId, panel } = payload as NotePanePayload
-      removeDetachedNoteId(noteId)
-      addNotePaneToLayout(noteId, panel)
-    })
-
-    const offRemoveNotePane = ipc.on(IPC.WINDOW_NOTE_PANE_REMOVED, (payload) => {
-      const { noteId, panel } = payload as NotePanePayload
-      addDetachedNoteId(noteId)
-      removeNotePaneFromLayout(noteId, panel)
-    })
-
-    const findFirstTerminalSessionId = (node: LayoutNode): string | null => {
-      if (node.type === 'leaf') return node.panel === 'terminal' ? node.sessionId : null
-      for (const child of node.children) {
-        const found = findFirstTerminalSessionId(child)
-        if (found) return found
-      }
-      return null
-    }
-
-    const onOpenProject = (): void => {
-      pickFolder().then((folder) => {
-        if (!folder) return
-        const { tabOrder, paneTree } = useStore.getState()
-        // Identify the home terminal — first non-root tab's first terminal session
-        const homeTabId = tabOrder.find((id) => id !== '__root__')
-        const homeSessionId = homeTabId && paneTree[homeTabId]
-          ? findFirstTerminalSessionId(paneTree[homeTabId])
-          : null
-
-        createSession({
-          name: folder.split(/[\\/]/).pop() ?? 'project',
-          cwd: folder,
-          cols: DEFAULT_COLS,
-          rows: DEFAULT_ROWS,
-          projectRoot: folder,
-        }).then((meta) => {
-          useStore.getState().upsertSession(meta)
-          useStore.getState().addTab(meta.sessionId)
-          // Replace the home terminal — closePane removes its tab from tabOrder entirely
-          if (homeTabId && homeSessionId) {
-            killSession(homeSessionId).catch(() => {})
-            useStore.getState().closePane(homeTabId, homeSessionId)
-          }
-        }).catch(() => {})
-      }).catch(() => {})
-    }
-    document.addEventListener('acc:open-project', onOpenProject)
-
     const offOpenPath = ipc.on(IPC.OPEN_PATH, (payload) => {
       const { path: folderPath } = payload as { path: string }
-      const { settings } = useStore.getState()
       createSession({
         name: folderPath.split(/[\\/]/).pop() ?? 'project',
         cwd: folderPath,
         cols: DEFAULT_COLS,
         rows: DEFAULT_ROWS,
-        projectRoot: folderPath,
-        workspaceId: settings.projectRoot ? undefined : undefined,
       }).then((meta) => {
         useStore.getState().upsertSession(meta)
         useStore.getState().addTab(meta.sessionId)
       }).catch(() => {})
     })
 
+    // acc:new-terminal-in-pane — add a new terminal tab without creating a top-level session tab.
+    // If leafId is provided: add to that specific editor-group leaf.
+    // If leafId is omitted: intelligently place in the current pane (focused leaf, first group, or replace home).
+    const handleNewTerminalInPane = (e: Event): void => {
+      const { tabId, leafId } = (e as CustomEvent<{ tabId: string; leafId?: string }>).detail
+      const { paneTree } = useStore.getState()
+      const terminalCount = Object.values(paneTree).reduce((n, tree) => n + (tree ? collectSessionIds(tree).length : 0), 0)
+      const colorIndex = terminalCount % SESSION_COLORS.length
+      const color = SESSION_COLORS[colorIndex]
+      createSession({
+        name: `Terminal ${terminalCount + 1}`,
+        cols: DEFAULT_COLS,
+        rows: DEFAULT_ROWS,
+        color,
+      }).then((meta) => {
+        if (leafId) {
+          useStore.getState().addTerminalTabToLeaf(tabId, leafId, meta)
+        } else {
+          useStore.getState().openTerminalInLayout(tabId, meta)
+        }
+      }).catch(() => {})
+    }
+    document.addEventListener('acc:new-terminal-in-pane', handleNewTerminalInPane)
+
     return () => {
-      document.removeEventListener('acc:open-project', onOpenProject)
       offInitial()
       offMeta()
       offExit()
@@ -278,11 +249,8 @@ export function useSessionLifecycle(): void {
       offWindowCount()
       offMetaUpdated()
       offSettingsUpdated()
-      offInitialNotPane()
-      offNotePaneReattached()
-      offAddNotePane()
-      offRemoveNotePane()
       offOpenPath()
+      document.removeEventListener('acc:new-terminal-in-pane', handleNewTerminalInPane)
     }
   }, [])
 

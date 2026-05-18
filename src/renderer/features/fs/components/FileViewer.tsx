@@ -113,11 +113,11 @@ function FilePane({ file, theme, tab, onTabChange }: PaneProps): JSX.Element {
 
           {ctxMenu && (
             <div
-              className="fixed z-50 bg-brand-surface border border-brand-panel rounded shadow-xl py-1 min-w-[120px]"
+              className="fixed z-50 bg-brand-panel border border-white/10 rounded shadow-2xl shadow-black/60 py-1 min-w-[120px]"
               style={{ top: ctxMenu.y, left: ctxMenu.x }}
               onMouseLeave={() => setCtxMenu(null)}
             >
-              <button onClick={handleCopy} className="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors">
+              <button onClick={handleCopy} className="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/10 hover:text-zinc-100 transition-colors">
                 Copy
               </button>
             </div>

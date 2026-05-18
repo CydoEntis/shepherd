@@ -18,7 +18,7 @@ function Item({ label, onClick, disabled }: { label: string; onClick: () => void
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        'w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors',
+        'w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/10 hover:text-zinc-100 transition-colors',
         disabled && 'opacity-30 pointer-events-none'
       )}
     >
@@ -28,7 +28,7 @@ function Item({ label, onClick, disabled }: { label: string; onClick: () => void
 }
 
 function Divider(): JSX.Element {
-  return <div className="h-px bg-brand-panel my-1" />
+  return <div className="h-px bg-white/10 my-1" />
 }
 
 export function TabBarContextMenu({ x, y, tabId, tabOrder, onClose, onDismiss }: Props): JSX.Element {
@@ -54,7 +54,7 @@ export function TabBarContextMenu({ x, y, tabId, tabOrder, onClose, onDismiss }:
     <div
       ref={ref}
       style={{ position: 'fixed', top: adjustedY, left: adjustedX, zIndex: 9999 }}
-      className="bg-brand-surface border border-brand-panel/60 rounded-md shadow-2xl py-1 w-52"
+      className="bg-brand-panel border border-white/10 rounded-md shadow-2xl shadow-black/60 py-1 w-52"
       onContextMenu={(e) => e.preventDefault()}
     >
       <Item label="Close Tab" onClick={dismiss(() => onClose([tabId]))} />

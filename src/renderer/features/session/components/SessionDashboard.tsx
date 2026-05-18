@@ -12,7 +12,7 @@ import { PROJECT_COLORS } from '../../fs/components/FileTabBar'
 import { useProjects } from '../hooks/useProjects'
 import { useConfirmClose } from '../hooks/useConfirmClose'
 import { useInstalledEditors } from '../../fs/hooks/useInstalledEditors'
-import { showInFolder, openInEditor, openPath } from '../../fs/fs.service'
+import { showInFolder, openInEditor, openPath, moveFileToWindow } from '../../fs/fs.service'
 import { createSession, patchSession } from '../session.service'
 import { DEFAULT_COLS, DEFAULT_ROWS } from '@shared/constants'
 import { EditSessionModal } from './EditSessionModal'
@@ -292,9 +292,10 @@ interface ProjectSectionProps {
   onNewSession: () => void
   onRemove: () => void
   onExpand: () => void
+  onMoveToWindow: (filePath: string, targetWindowId: string | null) => void
 }
 
-function ProjectSection({ path, name, colorIndex, refreshTick, activeFilePath, defaultExpanded, expandedOverride, onFileClick, onNewSession, onRemove, onExpand }: ProjectSectionProps): JSX.Element {
+function ProjectSection({ path, name, colorIndex, refreshTick, activeFilePath, defaultExpanded, expandedOverride, onFileClick, onNewSession, onRemove, onExpand, onMoveToWindow }: ProjectSectionProps): JSX.Element {
   const [expanded, setExpanded] = useState(defaultExpanded)
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
 
@@ -320,7 +321,7 @@ function ProjectSection({ path, name, colorIndex, refreshTick, activeFilePath, d
         <button onClick={(e) => { e.stopPropagation(); onNewSession() }} className="opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-brand-muted transition-colors" title="New session in this project"><Terminal size={12} /></button>
         <button onClick={(e) => { e.stopPropagation(); onRemove() }} className="opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-zinc-400 transition-colors" title="Remove"><X size={12} /></button>
       </div>
-      {expanded && <FileTree projectRoot={path} activeFilePath={activeFilePath} onFileClick={onFileClick} refreshTick={refreshTick} />}
+      {expanded && <FileTree projectRoot={path} activeFilePath={activeFilePath} onFileClick={onFileClick} refreshTick={refreshTick} onMoveToWindow={onMoveToWindow} />}
     </div>
   )
 }
@@ -559,6 +560,14 @@ export function SessionDashboard({ onFileClick, activeTab, activeFilePath, exter
     .filter((m) => !sessionQuery || m.name.toLowerCase().includes(sessionQuery.toLowerCase()) || m.cwd.toLowerCase().includes(sessionQuery.toLowerCase()))
   const groups = settings.sessionGroups ?? []
 
+  const handleFileMoveToWindow = useCallback(async (filePath: string, targetWindowId: string | null): Promise<void> => {
+    try { await moveFileToWindow(filePath, targetWindowId) } catch {}
+    const norm = (p: string): string => p.replace(/\\/g, '/')
+    const tabId = `file:${norm(filePath)}`
+    const state = useStore.getState()
+    if (state.fileTabs[tabId]) state.closeFileTab(tabId)
+  }, [])
+
   const handleAssignGroup = useCallback(async (sessionId: string, groupId: string | null) => {
     const updated = await patchSession({ sessionId, groupId })
     upsertSession(updated)
@@ -784,6 +793,7 @@ export function SessionDashboard({ onFileClick, activeTab, activeFilePath, exter
                   expandedOverride={projectExpandOverride}
                   onExpand={() => { setProjectExpandOverride(undefined); updateSettings({ lastActiveProject: p }) }}
                   onFileClick={onFileClick}
+                  onMoveToWindow={handleFileMoveToWindow}
                   onNewSession={async () => {
                     try {
                       const meta = await createSession({ name, cwd: p, cols: DEFAULT_COLS, rows: DEFAULT_ROWS })

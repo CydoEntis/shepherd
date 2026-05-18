@@ -12,11 +12,12 @@ import { getSession } from './features/session/session-registry'
 
 const windows = new Map<string, BrowserWindow>()
 const windowSessions = new Map<string, Set<string>>() // windowId → sessionIds it owns
-const windowNotePanes = new Map<string, { noteId: string; panel: 'notes' | 'markdown-preview' }>()
 const windowNames = new Map<string, string>()
 const windowColors = new Map<string, string>()
 const manuallyNamedWindows = new Set<string>() // windowIds the user has explicitly renamed
 const loadedWindowIds = new Set<string>()      // windowIds whose did-finish-load has fired
+const pendingFileOpens = new Map<string, string[]>() // windowId → file paths to open once loaded
+const windowFiles = new Map<string, Map<string, string | undefined>>() // windowId → (filePath → workspaceId)
 let mainWindowId: string | null = null
 let settingsWinId: string | null = null
 let isQuitting = false
@@ -54,7 +55,7 @@ function resequenceWindowNames(): void {
   }
 }
 
-export function createWindow(initialSessionIds: string[] = [], initialNoteId?: string, initialNotePaneInfo?: { noteId: string; panel: 'notes' | 'markdown-preview' }): BrowserWindow {
+export function createWindow(initialSessionIds: string[] = [], hash = ''): BrowserWindow {
   Menu.setApplicationMenu(null)
 
   const iconPath = app.isPackaged
@@ -66,6 +67,7 @@ export function createWindow(initialSessionIds: string[] = [], initialNoteId?: s
     height: 800,
     minWidth: 600,
     minHeight: 400,
+    show: false,
     frame: false,
     titleBarStyle: 'hidden',
     icon: iconPath,
@@ -75,6 +77,16 @@ export function createWindow(initialSessionIds: string[] = [], initialNoteId?: s
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false
+    }
+  })
+  win.once('ready-to-show', () => { win.show(); win.focus() })
+
+  // Chromium can silently swallow Ctrl+Shift+P before the DOM keydown fires.
+  // Intercept it here, suppress the browser event, and push an explicit IPC message.
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown' && input.control && input.shift && !input.alt && !input.meta && input.code === 'KeyP') {
+      event.preventDefault()
+      win.webContents.send(IPC.SHORTCUT_COMMAND_PALETTE)
     }
   })
 
@@ -120,12 +132,9 @@ export function createWindow(initialSessionIds: string[] = [], initialNoteId?: s
       totalWindowCount: appWindowCount,
     }
     win.webContents.send(IPC.WINDOW_INITIAL_SESSIONS, payload)
-    if (initialNoteId) {
-      win.webContents.send(IPC.WINDOW_INITIAL_NOTE_PREVIEW, { noteId: initialNoteId, windowId })
-    }
-    if (initialNotePaneInfo) {
-      win.webContents.send(IPC.WINDOW_INITIAL_NOTE_PANE, initialNotePaneInfo)
-    }
+
+    // Pending file opens are NOT sent here — the renderer polls via FS_GET_PENDING_FILES
+    // once its useEffect listener is registered, avoiding the did-finish-load race.
   })
 
   // Capture id before 'closed' fires — webContents is destroyed by then
@@ -133,6 +142,44 @@ export function createWindow(initialSessionIds: string[] = [], initialNoteId?: s
   const thisWindowId = getWindowId(win)
   win.on('maximize', () => win.webContents.send(IPC.WINDOW_MAXIMIZED_CHANGE, { maximized: true }))
   win.on('unmaximize', () => win.webContents.send(IPC.WINDOW_MAXIMIZED_CHANGE, { maximized: false }))
+
+  // Migrate sessions and file tabs to the main window when a secondary window is closed
+  win.on('close', (event) => {
+    if (isQuitting || thisWindowId === mainWindowId) return
+    event.preventDefault()
+
+    const mainWin = mainWindowId ? windows.get(mainWindowId) : undefined
+
+    // Migrate sessions
+    const sessions = windowSessions.get(thisWindowId) ?? new Set()
+    windowSessions.delete(thisWindowId)
+
+    // Migrate file tabs (tracked by main process whenever a file is pushed to this window)
+    const files = windowFiles.get(thisWindowId) ?? new Map<string, string | undefined>()
+    windowFiles.delete(thisWindowId)
+
+    if (mainWin && !mainWin.isDestroyed()) {
+      for (const sid of sessions) {
+        const e = getSession(sid)
+        if (e) {
+          e.pty.unsubscribe(win.webContents.id)
+          e.pty.subscribe(mainWin.webContents.id)
+        }
+        mainWin.webContents.send(IPC.WINDOW_TAB_REATTACHED, { sessionId: sid })
+      }
+      for (const [filePath, workspaceId] of files) {
+        if (mainWindowId && loadedWindowIds.has(mainWindowId)) {
+          mainWin.webContents.send(IPC.FS_FILE_OPEN_REQUESTED, { filePath, workspaceId })
+        } else if (mainWindowId) {
+          const pending = pendingFileOpens.get(mainWindowId) ?? []
+          pending.push(filePath)
+          pendingFileOpens.set(mainWindowId, pending)
+        }
+      }
+    }
+
+    win.destroy()
+  })
 
   win.on('closed', () => {
     windows.delete(thisWindowId)
@@ -151,10 +198,16 @@ export function createWindow(initialSessionIds: string[] = [], initialNoteId?: s
     return { action: 'deny' }
   })
 
+  // Prevent Electron from navigating the window when files are dragged in from the OS
+  win.webContents.on('will-navigate', (event, url) => {
+    if (url.startsWith('file://')) event.preventDefault()
+  })
+
+  const urlHash = hash ? `#${hash}` : ''
   if (process.env.NODE_ENV === 'development' || process.env.ELECTRON_RENDERER_URL) {
-    win.loadURL(process.env.ELECTRON_RENDERER_URL!)
+    win.loadURL(process.env.ELECTRON_RENDERER_URL! + urlHash)
   } else {
-    win.loadFile(join(__dirname, '../renderer/index.html'))
+    win.loadFile(join(__dirname, '../renderer/index.html'), hash ? { hash } : undefined)
   }
 
   return win
@@ -276,54 +329,6 @@ export function openSettingsWindow(): void {
   }
 }
 
-export function detachNotePreview(noteId: string): string {
-  const newWin = createWindow([], noteId)
-  return getWindowId(newWin)
-}
-
-export function detachNotePane(noteId: string, panel: 'notes' | 'markdown-preview'): string {
-  const newWin = createWindow([], undefined, { noteId, panel })
-  const newWindowId = getWindowId(newWin)
-  windowNotePanes.set(newWindowId, { noteId, panel })
-  newWin.on('closed', () => {
-    if (isQuitting) return
-    const pane = windowNotePanes.get(newWindowId)
-    windowNotePanes.delete(newWindowId)
-    if (!mainWindowId || !pane) return
-    const mainWin = windows.get(mainWindowId)
-    if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send(IPC.WINDOW_NOTE_PANE_REATTACHED, pane)
-  })
-  return newWindowId
-}
-
-export function reattachNotePaneToMain(noteId: string, panel: 'notes' | 'markdown-preview', fromWindowId: string): void {
-  if (!mainWindowId) return
-  const mainWin = windows.get(mainWindowId)
-  if (!mainWin || mainWin.isDestroyed()) return
-  mainWin.webContents.send(IPC.WINDOW_NOTE_PANE_REATTACHED, { noteId, panel })
-  windowNotePanes.delete(fromWindowId)
-  const fromWin = windows.get(fromWindowId)
-  if (fromWin && !fromWin.isDestroyed() && fromWindowId !== mainWindowId) fromWin.close()
-}
-
-export function moveNotePaneToWindow(noteId: string, panel: 'notes' | 'markdown-preview', fromWindowId: string, targetWindowId: string): void {
-  if (fromWindowId === targetWindowId) return
-  const targetWin = windows.get(targetWindowId)
-  if (!targetWin || targetWin.isDestroyed()) return
-  targetWin.webContents.send(IPC.WINDOW_ADD_NOTE_PANE, { noteId, panel })
-  windowNotePanes.delete(fromWindowId)
-  const fromWin = windows.get(fromWindowId)
-  if (fromWin && !fromWin.isDestroyed()) {
-    const fromSessionCount = windowSessions.get(fromWindowId)?.size ?? 0
-    if (fromWindowId !== mainWindowId && fromSessionCount === 0) {
-      fromWin.close()
-    } else {
-      fromWin.webContents.send(IPC.WINDOW_NOTE_PANE_REMOVED, { noteId, panel })
-    }
-  }
-  if (targetWindowId !== mainWindowId) windowNotePanes.set(targetWindowId, { noteId, panel })
-}
-
 export function getMainWindow(): BrowserWindow | undefined {
   if (!mainWindowId) return undefined
   const win = windows.get(mainWindowId)
@@ -343,6 +348,33 @@ export function getWindowList(excludeWindowId?: string): { windowId: string; isM
     })
   }
   return result
+}
+
+export function getPendingFileOpens(windowId: string): string[] {
+  const files = pendingFileOpens.get(windowId) ?? []
+  pendingFileOpens.delete(windowId)
+  return files
+}
+
+export function moveFileToWindow(filePath: string, fromWindowId: string, targetWindowId: string | null, workspaceId?: string): void {
+  if (targetWindowId === null) {
+    const newWin = createWindow([], 'editor')
+    const newWindowId = getWindowId(newWin)
+    const pending = pendingFileOpens.get(newWindowId) ?? []
+    pending.push(filePath)
+    pendingFileOpens.set(newWindowId, pending)
+    if (!windowFiles.has(newWindowId)) windowFiles.set(newWindowId, new Map())
+    windowFiles.get(newWindowId)!.set(filePath, workspaceId)
+    return
+  }
+  if (fromWindowId === targetWindowId) return
+  const targetWin = windows.get(targetWindowId)
+  if (!targetWin || targetWin.isDestroyed()) return
+  targetWin.webContents.send(IPC.FS_FILE_OPEN_REQUESTED, { filePath, workspaceId })
+  if (targetWindowId !== mainWindowId) {
+    if (!windowFiles.has(targetWindowId)) windowFiles.set(targetWindowId, new Map())
+    windowFiles.get(targetWindowId)!.set(filePath, workspaceId)
+  }
 }
 
 export function highlightWindow(targetWindowId: string, active: boolean): void {
@@ -372,9 +404,6 @@ export function isMainWindow(windowId: string): boolean {
   return windowId === mainWindowId
 }
 
-export function getWindowNotePanesList(): Array<{ noteId: string; panel: 'notes' | 'markdown-preview' }> {
-  return [...windowNotePanes.values()]
-}
 
 export function findWindowForSession(sessionId: string): string | null {
   for (const [windowId, sessions] of windowSessions) {

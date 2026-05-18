@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { ChevronRight, ChevronDown, File, FileCode, FileJson, FileText, FileImage, Folder, FolderOpen } from 'lucide-react'
 import { createPortal } from 'react-dom'
-import { readDir, getGitStatus, renameEntry, trashEntry, writeFile, mkdir, findFiles, copyFile } from '../fs.service'
+import { readDir, getGitStatus, renameEntry, trashEntry, writeFile, mkdir, findFiles, copyPath } from '../fs.service'
 import { FileTreeContextMenu } from './FileTreeContextMenu'
 import { useInstalledEditors } from '../hooks/useInstalledEditors'
 import { useLayoutDnd } from '../../layout/dnd/LayoutDndContext'
@@ -272,7 +272,7 @@ function TreeNode({ entry, depth, gitMap, projectRoot, activeFilePath, focusedPa
               : isActive ? 'bg-brand-panel/60' : 'hover:bg-brand-panel/40'
         )}
         style={{ paddingLeft: `${6 + depth * 12}px`, paddingRight: 8 }}
-        onContextMenu={(e) => { e.preventDefault(); onContextMenu(e, entry, rel) }}
+        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onContextMenu(e, entry, rel) }}
       >
         <button onClick={toggle} className="flex items-center gap-1 flex-1 min-w-0 text-left">
           {entry.isDirectory
@@ -365,9 +365,10 @@ interface Props {
   onFileClick: (path: string, xy: string | undefined) => void
   refreshTick?: number
   filterText?: string
+  onMoveToWindow?: (filePath: string, targetWindowId: string | null) => void
 }
 
-export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileClick, refreshTick = 0, filterText = '' }: Props): JSX.Element {
+export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileClick, refreshTick = 0, filterText = '', onMoveToWindow }: Props): JSX.Element {
   const [rootEntries, setRootEntries] = useState<FsEntry[]>([])
   const [childrenMap, setChildrenMap] = useState<Map<string, FsEntry[]>>(new Map())
   const [gitMap, setGitMap] = useState<Map<string, string>>(new Map())
@@ -633,10 +634,10 @@ export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileC
   const handleExternalDrop = useCallback(async (dirPath: string, files: File[]) => {
     setExtDropDir(null)
     for (const file of files) {
-      const src = (file as unknown as { path: string }).path
+      const src = window.electronWebUtils.getPathForFile(file)
       if (!src) continue
       const dest = dirPath.replace(/\/$/, '') + '/' + file.name
-      try { await copyFile(src, dest) } catch {}
+      try { await copyPath(src, dest) } catch {}
     }
     await loadRoot()
   }, [loadRoot])
@@ -655,7 +656,7 @@ export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileC
     const name = srcNorm.split('/').pop() ?? ''
     const destPath = destNorm + '/' + name
     try {
-      await copyFile(srcPath, destPath)
+      await copyPath(srcPath, destPath)
       await trashEntry(srcPath)
       await loadRoot()
     } catch {}
@@ -730,6 +731,11 @@ export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileC
       <div
         ref={treeBodyRef}
         className="flex-1 overflow-y-auto py-1 px-1"
+        onContextMenu={(e) => {
+          e.preventDefault()
+          const rootEntry: FsEntry = { name: projectRoot.split('/').pop() ?? '', path: projectRoot, isDirectory: true }
+          setCtxTarget({ x: e.clientX, y: e.clientY, entry: rootEntry, rel: '' })
+        }}
         onDragOver={(e) => {
           if (e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes('application/orbit-file')) e.preventDefault()
         }}
@@ -738,11 +744,13 @@ export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileC
           const orbitSrc = e.dataTransfer.getData('application/orbit-file')
           if (orbitSrc) {
             e.preventDefault()
+            e.stopPropagation()
             void handleInternalDrop(orbitSrc, projectRoot)
             return
           }
           if (!e.dataTransfer.types.includes('Files')) return
           e.preventDefault()
+          e.stopPropagation()
           void handleExternalDrop(projectRoot, Array.from(e.dataTransfer.files))
         }}
       >
@@ -770,11 +778,12 @@ export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileC
           rel={ctxTarget.rel}
           editors={editors}
           onFileClick={onFileClick}
-          onRename={() => setRenamingPath(ctxTarget.entry.path)}
-          onDelete={() => setDeletingEntry(ctxTarget.entry)}
+          onRename={ctxTarget.entry.path === projectRoot ? undefined : () => setRenamingPath(ctxTarget.entry.path)}
+          onDelete={ctxTarget.entry.path === projectRoot ? undefined : () => setDeletingEntry(ctxTarget.entry)}
           onDismiss={() => setCtxTarget(null)}
           onNewFile={ctxTarget.entry.isDirectory ? () => handleQuickNew(norm(ctxTarget.entry.path), 'file') : undefined}
           onNewFolder={ctxTarget.entry.isDirectory ? () => handleQuickNew(norm(ctxTarget.entry.path), 'folder') : undefined}
+          onMoveToWindow={onMoveToWindow}
         />
       )}
 

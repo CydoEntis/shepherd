@@ -79,21 +79,21 @@ export function SessionCtxMenu({ ctxMenu, onDismiss, onRename, onSplitHere, onDe
       />
       <div
         ref={menuRef}
-        className="fixed z-[9999] bg-brand-surface border border-brand-panel/60 rounded shadow-xl py-1 min-w-[160px]"
+        className="fixed z-[9999] bg-brand-panel border border-white/10 rounded shadow-2xl shadow-black/60 py-1 min-w-[160px]"
         style={{ left: menuX, top: menuY }}
       >
         <button
           onMouseDown={(e) => { e.stopPropagation(); onRename(meta); onDismiss() }}
-          className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors"
+          className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/10 hover:text-zinc-100 transition-colors"
         >
           <Pencil size={12} />Edit
         </button>
         {canSplitHere && (
           <>
-            <div className="my-1 border-t border-brand-panel/60" />
+            <div className="my-1 border-t border-white/10" />
             <button
               onMouseDown={(e) => { e.stopPropagation(); onSplitHere(meta.sessionId); onDismiss() }}
-              className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors"
+              className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/10 hover:text-zinc-100 transition-colors"
             >
               <Columns2 size={12} />Split Here
             </button>
@@ -101,16 +101,16 @@ export function SessionCtxMenu({ ctxMenu, onDismiss, onRename, onSplitHere, onDe
         )}
         {hasAllSplits && (
           <>
-            <div className="my-1 border-t border-brand-panel/60" />
+            <div className="my-1 border-t border-white/10" />
             <button
               onMouseDown={(e) => { e.stopPropagation(); onCloseAllSplits(meta); onDismiss() }}
-              className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors"
+              className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/10 hover:text-zinc-100 transition-colors"
             >
               <Scissors size={12} />Close All Splits
             </button>
           </>
         )}
-        <div className="my-1 border-t border-brand-panel/60" />
+        <div className="my-1 border-t border-white/10" />
         <button
           ref={moveTriggerRef}
           onMouseEnter={() => {
@@ -120,15 +120,15 @@ export function SessionCtxMenu({ ctxMenu, onDismiss, onRename, onSplitHere, onDe
             setShowMoveSubmenu(true)
           }}
           onMouseLeave={scheduleHideSubmenu}
-          className="w-full flex items-center justify-between px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors"
+          className="w-full flex items-center justify-between px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/10 hover:text-zinc-100 transition-colors"
         >
           <span className="flex items-center gap-2.5"><ArrowRightLeft size={12} />Move to Window</span>
           <ChevronRight size={10} className="text-zinc-600" />
         </button>
-        <div className="my-1 border-t border-brand-panel/60" />
+        <div className="my-1 border-t border-white/10" />
         <button
           onMouseDown={(e) => { e.stopPropagation(); onKill(meta); onDismiss() }}
-          className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-red-400 hover:bg-brand-panel hover:text-red-300 transition-colors"
+          className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-red-400 hover:bg-white/10 hover:text-red-300 transition-colors"
         >
           <Trash2 size={12} />Kill Session
         </button>

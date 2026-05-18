@@ -1,6 +1,7 @@
 import { ipc } from '../../lib/ipc'
 import { IPC } from '@shared/ipc-channels'
 import type { FsEntry, GitStatusEntry } from '@shared/ipc-types'
+import { useStore } from '../../store/root.store'
 
 export async function readDir(dirPath: string): Promise<FsEntry[]> {
   return ipc.invoke(IPC.FS_READ_DIR, { dirPath }) as Promise<FsEntry[]>
@@ -56,6 +57,10 @@ export async function trashEntry(filePath: string): Promise<void> {
 
 export async function copyFile(srcPath: string, destPath: string): Promise<void> {
   await ipc.invoke(IPC.FS_COPY_FILE, { srcPath, destPath })
+}
+
+export async function copyPath(srcPath: string, destPath: string): Promise<void> {
+  await ipc.invoke(IPC.FS_COPY_PATH, { srcPath, destPath })
 }
 
 export async function findFiles(rootPath: string): Promise<string[]> {
@@ -117,17 +122,26 @@ export async function gitPush(projectRoot: string): Promise<{ success: boolean; 
   return ipc.invoke(IPC.FS_GIT_PUSH, { projectRoot }) as Promise<{ success: boolean; error?: string }>
 }
 
-export interface WorktreeResult { worktreePath: string; branchName: string; baseBranch: string }
-export interface WorktreeStats { added: number; deleted: number; commits: number }
+export interface WorktreeInfo { path: string; branch: string; isMain: boolean }
+export interface WorktreeResult { worktreePath: string; branchName: string }
 
-export async function createWorktree(projectRoot: string, branchName: string): Promise<WorktreeResult> {
-  return ipc.invoke(IPC.FS_GIT_WORKTREE_CREATE, { projectRoot, branchName }) as Promise<WorktreeResult>
+export async function listWorktrees(projectRoot: string): Promise<WorktreeInfo[]> {
+  return ipc.invoke(IPC.FS_GIT_WORKTREE_LIST, { projectRoot }) as Promise<WorktreeInfo[]>
+}
+
+export async function createWorktree(projectRoot: string, branchName: string, worktreePath: string): Promise<WorktreeResult> {
+  return ipc.invoke(IPC.FS_GIT_WORKTREE_CREATE, { projectRoot, branchName, worktreePath }) as Promise<WorktreeResult>
 }
 
 export async function removeWorktree(projectRoot: string, worktreePath: string): Promise<{ success: boolean; error?: string }> {
   return ipc.invoke(IPC.FS_GIT_WORKTREE_REMOVE, { projectRoot, worktreePath }) as Promise<{ success: boolean; error?: string }>
 }
 
-export async function getWorktreeStats(worktreePath: string, baseBranch: string): Promise<WorktreeStats> {
-  return ipc.invoke(IPC.FS_GIT_WORKTREE_STATS, { worktreePath, baseBranch }) as Promise<WorktreeStats>
+export async function moveFileToWindow(filePath: string, targetWindowId: string | null): Promise<void> {
+  const workspaceId = useStore.getState().activeWorkspaceId
+  await ipc.invoke(IPC.FS_MOVE_FILE_TO_WINDOW, { filePath, targetWindowId, workspaceId })
+}
+
+export async function getPendingFileOpens(): Promise<string[]> {
+  return ipc.invoke(IPC.FS_GET_PENDING_FILES) as Promise<string[]>
 }

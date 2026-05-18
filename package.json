@@ -37,6 +37,7 @@
     "@xterm/xterm": "^5.5.0",
     "electron-store": "^10.0.0",
     "electron-updater": "^6.8.3",
+    "ignore": "^7.0.5",
     "immer": "^10.1.1",
     "marked": "^18.0.3",
     "monaco-themes": "^0.4.8",

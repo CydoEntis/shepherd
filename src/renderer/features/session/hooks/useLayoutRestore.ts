@@ -10,15 +10,23 @@ import { DEFAULT_COLS, DEFAULT_ROWS } from '@shared/constants'
 
 function remapLayoutTree(node: LayoutNode, idMap: Map<string, string>): LayoutNode {
   if (node.type === 'leaf') {
-    if (node.panel !== 'terminal') return node
-    const newId = idMap.get(node.sessionId)
-    return newId ? { ...node, sessionId: newId } : node
+    if (node.panel !== 'editor-group') return node
+    const newTabs = node.tabs.map((t) => {
+      if (t.kind !== 'terminal') return t
+      const newId = idMap.get(t.sessionId)
+      return newId ? { ...t, sessionId: newId } : t
+    })
+    return { ...node, tabs: newTabs }
   }
   return { ...node, children: node.children.map((c) => remapLayoutTree(c, idMap)) }
 }
 
 function firstSessionId(node: LayoutNode): string | null {
-  if (node.type === 'leaf') return node.panel === 'terminal' ? node.sessionId : null
+  if (node.type === 'leaf') {
+    if (node.panel !== 'editor-group') return null
+    const termTab = node.tabs.find((t) => t.kind === 'terminal')
+    return termTab && termTab.kind === 'terminal' ? termTab.sessionId : null
+  }
   for (const child of node.children) {
     const id = firstSessionId(child)
     if (id) return id
@@ -42,17 +50,9 @@ export function useLayoutRestore(): void {
 
     for (const ps of layout.sessions) {
       try {
-        const cwd = ps.worktreePath || ps.cwd || undefined
         // Restore as plain shells — don't auto-relaunch agent commands on restart.
-        // The cwd, name, color, and group are preserved; the user can start an
-        // agent manually in any restored session.
-        const meta = await createSession({ name: ps.name, cwd, cols: DEFAULT_COLS, rows: DEFAULT_ROWS, color: ps.color, groupId: ps.groupId, noSandbox: true })
-        if (ps.worktreePath) {
-          upsertSession({ ...meta, worktreePath: ps.worktreePath, worktreeBranch: ps.worktreeBranch, worktreeBaseBranch: ps.worktreeBaseBranch, projectRoot: ps.projectRoot })
-          patchSession({ sessionId: meta.sessionId, worktreePath: ps.worktreePath, worktreeBranch: ps.worktreeBranch, worktreeBaseBranch: ps.worktreeBaseBranch, projectRoot: ps.projectRoot }).catch(() => {})
-        } else {
-          upsertSession(meta)
-        }
+        const meta = await createSession({ name: ps.name, cwd: ps.cwd || undefined, cols: DEFAULT_COLS, rows: DEFAULT_ROWS, color: ps.color, groupId: ps.groupId, noSandbox: true })
+        upsertSession(meta)
         idMap.set(ps.sessionId, meta.sessionId)
         createdMetas.push(meta)
       } catch (err) {

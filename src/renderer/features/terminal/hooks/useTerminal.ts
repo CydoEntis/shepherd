@@ -583,7 +583,7 @@ export function useTerminal(sessionId: string, containerRef: React.RefObject<HTM
       const x = e.clientX
       const y = e.clientY
 
-      navigator.clipboard.readText().catch(() => '').then((clipText) => {
+      readClipboard().catch(() => '').then((clipText) => {
         const items: TerminalCtxItem[] = []
 
         if (sel) {
@@ -598,6 +598,8 @@ export function useTerminal(sessionId: string, containerRef: React.RefObject<HTM
         if (clipText) {
           items.push({ label: 'Paste', action: () => { terminal.paste(clipText); requestAnimationFrame(() => terminal.focus()) } })
         }
+
+        items.push({ label: 'Clear', action: () => { terminal.clear(); terminal.focus() } })
 
         setCtxMenu({ x, y, items })
       })

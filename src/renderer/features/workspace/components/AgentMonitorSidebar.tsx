@@ -1,19 +1,18 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
-import { Plus, ChevronDown, ChevronRight, FolderOpen, X, Users, Terminal, FilePlus2, FolderPlus, ExternalLink, FolderX } from 'lucide-react'
+import { Plus, ChevronDown, ChevronRight, FolderOpen, X, FilePlus2, FolderPlus, ExternalLink, FolderX } from 'lucide-react'
 import { useStore } from '../../../store/root.store'
 import { patchSession, killSession } from '../../session/session.service'
 import { EditSessionModal } from '../../session/components/EditSessionModal'
 import { EditGroupModal } from '../../session/components/EditGroupModal'
-import { removeWorktree, copyFile, openInEditor } from '../../fs/fs.service'
+import { copyPath, openInEditor, moveFileToWindow } from '../../fs/fs.service'
 import { useInstalledEditors } from '../../fs/hooks/useInstalledEditors'
 import { createWorkspace, deleteWorkspace } from '../workspace.service'
 import { detachTab, reattachTab, moveToWindow } from '../../window/window.service'
 import { NewWorkspaceModal } from './NewWorkspaceModal'
 import { ConfirmCloseProjectModal } from './ConfirmCloseProjectModal'
 import { shortPath } from '../../../lib/utils'
-import { findTabForSession, collectSessionIds, makeFileEditorLeaf, collectFileEditorLeaves } from '../../layout/layout-tree'
+import { findTabForSession, collectSessionIds, makeFileEditorLeaf, findLeafById } from '../../layout/layout-tree'
 import { useLayoutDnd } from '../../layout/dnd/LayoutDndContext'
-import { useWorktreeStats } from '../hooks/useWorktreeStats'
 import { useConfirmClose } from '../../session/hooks/useConfirmClose'
 import { toast } from 'sonner'
 import { cn, normalizePath } from '../../../lib/utils'
@@ -56,15 +55,13 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
   const removeWorkspaceFromStore = useStore((s) => s.removeWorkspaceFromStore)
 
   const focusedLeafId = useStore((s) => s.focusedLeafId)
-  const setFocusedLeaf = useStore((s) => s.setFocusedLeaf)
-  const openFileTab = useStore((s) => s.openFileTab)
+  const openFileInLayout = useStore((s) => s.openFileInLayout)
   const { startDrag, endDrag } = useLayoutDnd()
   const ghostRef = useRef<HTMLImageElement | null>(null)
   const GHOST_SRC = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
 
   const { requestClose, modal: closeModal } = useConfirmClose()
 
-  const [activeView, setActiveView] = useState<'files' | 'sessions'>('sessions')
   const [fileRefreshTick, setFileRefreshTick] = useState(0)
   const [wsOpen, setWsOpen] = useState(false)
   const [showNewWsModal, setShowNewWsModal] = useState(false)
@@ -78,6 +75,14 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
   const [dragOverGroupId, setDragOverGroupId] = useState<string | null | 'ungrouped'>('ungrouped')
   const [isDragOver, setIsDragOver] = useState(false)
   const [closingProject, setClosingProject] = useState<Workspace | null>(null)
+
+  // The global App drop handler runs in capture phase and stops propagation, so the sidebar's
+  // own onDrop never fires to clear isDragOver. Listen at document capture level instead.
+  useEffect(() => {
+    const clear = (): void => setIsDragOver(false)
+    document.addEventListener('drop', clear, { capture: true })
+    return () => document.removeEventListener('drop', clear, { capture: true })
+  }, [])
   const sidebarBodyRef = useRef<HTMLDivElement>(null)
   const installedEditors = useInstalledEditors()
 
@@ -97,7 +102,7 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
       (!focused.workspaceId && !workspaces.some((w) => {
         if (w.isRoot || !w.rootPath) return false
         const wsPath = normalizePath(w.rootPath)
-        const sp = normalizePath(focused.projectRoot ?? focused.cwd)
+        const sp = normalizePath(focused.cwd)
         return sp === wsPath || sp.startsWith(wsPath + '/')
       }))
     )
@@ -106,20 +111,6 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
     if (cwd) return normalizePath(cwd)
     return normalizedActive ?? ''
   }, [isRootWorkspace, normalizedActive, focusedSessionId, activeSessionId, sessions, workspaces])
-
-  // Switch to Files tab when a project root first appears (project opened or workspace selected)
-  const prevRootRef = useRef(fileTreeRoot)
-  useEffect(() => {
-    if (fileTreeRoot && !prevRootRef.current) setActiveView('files')
-    prevRootRef.current = fileTreeRoot
-  }, [fileTreeRoot])
-
-  // When switching to a named workspace with a folder: show Files tab
-  useEffect(() => {
-    if (isRootWorkspace || !normalizedActive || isRestoringLayout) return
-    setActiveView('files')
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeWorkspaceId])
 
   // Refresh file tree when a file is saved from the editor
   useEffect(() => {
@@ -149,7 +140,7 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
         if (isRootWorkspace) {
           if (m.workspaceId) return m.workspaceId === ROOT_WORKSPACE_ID
           // Untagged session: only show in Home if its path doesn't match any named workspace
-          const sessionPath = normalizePath(m.projectRoot ?? m.cwd)
+          const sessionPath = normalizePath(m.cwd)
           return !workspaces.some((w) => {
             if (w.isRoot || !w.rootPath) return false
             const wsPath = normalizePath(w.rootPath)
@@ -158,14 +149,12 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
         }
         if (m.workspaceId) return m.workspaceId === activeWorkspaceId
         if (!normalizedActive) return false
-        const root = normalizePath(m.projectRoot ?? m.cwd)
+        const root = normalizePath(m.cwd)
         return root === normalizedActive || root.startsWith(normalizedActive + '/')
       })
       .sort((a, b) => b.createdAt - a.createdAt),
     [sessions, currentWindowSessionIds, isRootWorkspace, activeWorkspaceId, normalizedActive, workspaces]
   )
-
-  const worktreeStats = useWorktreeStats(isRootWorkspace ? [] : projectSessions)
 
   const grouped = useMemo(() => {
     if (!isRootWorkspace) return null
@@ -209,14 +198,13 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
     requestClose(async () => {
       try { await killSession(meta.sessionId) } catch {}
       removeTab(meta.sessionId)
-      if (meta.worktreePath && meta.projectRoot) removeWorktree(meta.projectRoot, meta.worktreePath).catch(() => {})
       if (activeSessionId === meta.sessionId) {
         const remaining = Object.values(useStore.getState().sessions)
           .filter((s) => {
             if (s.sessionId === meta.sessionId) return false
             if (isRootWorkspace) {
               if (s.workspaceId) return s.workspaceId === ROOT_WORKSPACE_ID
-              const sessionPath = normalizePath(s.projectRoot ?? s.cwd)
+              const sessionPath = normalizePath(s.cwd)
               return !workspaces.some((w) => {
                 if (w.isRoot || !w.rootPath) return false
                 const wsPath = normalizePath(w.rootPath)
@@ -225,7 +213,7 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
             }
             if (s.workspaceId) return s.workspaceId === activeWorkspaceId
             if (!normalizedActive) return false
-            const root = normalizePath(s.projectRoot ?? s.cwd)
+            const root = normalizePath(s.cwd)
             return root === normalizedActive || root.startsWith(normalizedActive + '/')
           })
           .sort((a, b) => b.createdAt - a.createdAt)
@@ -326,6 +314,14 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
     void moveToWindow(sessionId, targetWindowId)
   }, [detachPane])
 
+  const handleFileMoveToWindow = useCallback(async (filePath: string, targetWindowId: string | null): Promise<void> => {
+    try { await moveFileToWindow(filePath, targetWindowId) } catch {}
+    const norm = (p: string): string => p.replace(/\\/g, '/')
+    const tabId = `file:${norm(filePath)}`
+    const state = useStore.getState()
+    if (state.fileTabs[tabId]) state.closeFileTab(tabId)
+  }, [])
+
   const handleSplitHere = useCallback((sessionId: string): void => {
     if (!activeSessionId) return
     openGroupInSplits([activeSessionId, sessionId])
@@ -345,29 +341,18 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
     for (const tabId of Object.keys(paneTree)) {
       const tree = paneTree[tabId]
       if (!tree) continue
-      const leaf = collectFileEditorLeaves(tree).find((l) => l.leafId === focusedLeafId)
-      if (leaf) return leaf.filePath
+      const leaf = findLeafById(tree, focusedLeafId)
+      if (leaf?.panel === 'editor-group') {
+        const activeTab = leaf.tabs[leaf.activeIndex] ?? leaf.tabs[0]
+        return activeTab?.kind === 'file' ? activeTab.path : null
+      }
     }
     return null
   }, [focusedLeafId, paneTree])
 
   const navigateToFile = useCallback((filePath: string) => {
-    const norm = normalizePath(filePath)
-    // Check if file is already open as a split pane in any tab
-    for (const tabId of Object.keys(paneTree)) {
-      const tree = paneTree[tabId]
-      if (!tree) continue
-      const leaf = collectFileEditorLeaves(tree).find((l) => normalizePath(l.filePath) === norm)
-      if (leaf) {
-        // Already visible in a pane — switch to its tab and focus the leaf
-        onSelectSession(tabId)
-        useStore.getState().setActiveSession(tabId)
-        setFocusedLeaf(leaf.leafId)
-        return
-      }
-    }
-    openFileTab(filePath, activeWorkspaceId)
-  }, [openFileTab, activeWorkspaceId, paneTree, onSelectSession, setFocusedLeaf])
+    openFileInLayout(filePath, activeSessionId ?? '__root__')
+  }, [openFileInLayout, activeSessionId])
 
   const handleSessionSelect = useCallback((sessionId: string): void => {
     const tabId = findTabForSession(paneTree, sessionId)
@@ -385,7 +370,6 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
       key={meta.sessionId}
       meta={meta}
       activeSessionId={effectiveActiveId}
-      worktreeStats={worktreeStats}
       isNoWorkspace={isRootWorkspace}
       dragging={draggedSessionId === meta.sessionId}
       onSelectSession={() => handleSessionSelect(meta.sessionId)}
@@ -476,7 +460,6 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
                             key={meta.sessionId}
                             meta={meta}
                             activeSessionId={effectiveActiveId}
-                            worktreeStats={worktreeStats}
                             isNoWorkspace={isRootWorkspace}
                             dragging={draggedSessionId === meta.sessionId}
                             onSelectSession={() => handleSessionSelect(meta.sessionId)}
@@ -515,9 +498,9 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
     if (orbitPath && fileTreeRoot) {
       const fileName = orbitPath.replace(/\\/g, '/').split('/').pop() ?? 'file'
       const destPath = fileTreeRoot + '/' + fileName
-      copyFile(orbitPath, destPath)
+      copyPath(orbitPath, destPath)
         .then(() => setFileRefreshTick((t) => t + 1))
-        .catch(() => toast.error(`Failed to copy ${fileName}`))
+        .catch((err: unknown) => toast.error(`Failed to copy ${fileName}: ${err instanceof Error ? err.message : String(err)}`))
       return
     }
 
@@ -525,18 +508,18 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
     const files = Array.from(e.dataTransfer.files)
     if (fileTreeRoot) {
       for (const file of files) {
-        const srcPath = (file as unknown as { path: string }).path
+        const srcPath = window.electronWebUtils.getPathForFile(file)
         if (!srcPath) continue
         const destPath = fileTreeRoot + '/' + file.name
-        copyFile(srcPath, destPath)
+        copyPath(srcPath, destPath)
           .then(() => setFileRefreshTick((t) => t + 1))
-          .catch(() => toast.error(`Failed to copy ${file.name}`))
+          .catch((err: unknown) => toast.error(`Failed to copy ${file.name}: ${err instanceof Error ? err.message : String(err)}`))
       }
       return
     }
     if (!activeSessionId || activeSessionId.startsWith('file:') || activeSessionId === '__root__') return
     for (const file of files) {
-      const path = (file as unknown as { path: string }).path
+      const path = window.electronWebUtils.getPathForFile(file)
       if (!path) continue
       if (file.type !== '') {
         insertLayoutAtRight(activeSessionId, makeFileEditorLeaf(path))
@@ -552,7 +535,7 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
       onDrop={handleFileDrop}
     >
       {/* Workspace switcher */}
-      <div className="flex-shrink-0 relative px-2 pt-2 pb-[3px]">
+      <div className="flex-shrink-0 relative px-2 pt-2 pb-1">
         <div className="flex items-stretch gap-[3px]">
           <button
             onClick={() => setWsOpen((v) => !v)}
@@ -591,14 +574,14 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
         {wsOpen && (
           <>
             <div className="fixed inset-0 z-40" onClick={() => setWsOpen(false)} />
-            <div className="absolute left-2 right-2 top-full mt-1 z-50 bg-brand-surface border border-brand-panel/60 rounded-lg shadow-xl py-1 max-h-48 overflow-y-auto">
+            <div className="absolute left-2 right-2 top-full mt-1 z-50 bg-brand-surface border border-brand-panel rounded-lg shadow-xl shadow-black/50 py-1 max-h-48 overflow-y-auto">
               <button
                 onClick={() => { setWsOpen(false); setShowNewWsModal(true) }}
                 className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-zinc-500 hover:bg-brand-panel hover:text-zinc-300 transition-colors text-left"
               >
-                <Plus size={11} /> New Project
+                <Plus size={11} /> Open Project
               </button>
-              <div className="h-px bg-brand-panel my-1" />
+              <div className="h-px bg-brand-panel/40 my-1" />
               <button
                 onClick={() => { onWorkspaceChange(ROOT_WORKSPACE_ID); setWsOpen(false) }}
                 className={cn('w-full px-3 py-1.5 text-xs text-left transition-colors hover:bg-brand-panel', isRootWorkspace && 'bg-brand-panel/60 text-zinc-200')}
@@ -609,7 +592,7 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
                     : (workspaces.find((w) => w.isRoot)?.name ?? 'Home')}
                 </span>
               </button>
-              {workspaces.filter((w) => !w.isRoot).length > 0 && <div className="h-px bg-brand-panel my-1" />}
+              {workspaces.filter((w) => !w.isRoot).length > 0 && <div className="h-px bg-brand-panel/40 my-1" />}
               {workspaces.filter((w) => !w.isRoot).map((w) => (
                 <div key={w.id} className="group relative flex items-center">
                   <button
@@ -630,7 +613,7 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
               ))}
               {recentProjects.length > 0 && (
                 <>
-                  <div className="h-px bg-brand-panel my-1" />
+                  <div className="h-px bg-brand-panel/40 my-1" />
                   <div className="px-3 pt-1 pb-0.5 text-[10px] text-zinc-600 uppercase tracking-wider">Recent</div>
                   {recentProjects.slice(0, 8).map((path) => {
                     const name = path.replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? path
@@ -680,9 +663,9 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
         )}
       </div>
 
-      {/* Body — file tree card */}
+      {/* Body — file tree card + terminal button */}
       <div className="px-2 pb-2 flex flex-col flex-1 min-h-0" ref={sidebarBodyRef}>
-        <div className="flex flex-col flex-1 min-h-0 rounded-b-xl border border-brand-panel/60 bg-brand-surface shadow-md shadow-black/20 overflow-hidden">
+        <div className="flex flex-col flex-1 min-h-0 border border-brand-panel/60 bg-brand-surface shadow-md shadow-black/20 overflow-hidden">
           {/* Folder header */}
           <div className="flex items-center gap-1 px-3 py-2 border-b border-brand-panel/40 flex-shrink-0">
             <span className="text-sm text-zinc-300 truncate flex-1 min-w-0 font-medium">
@@ -720,6 +703,7 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
               activeFilePath={activeFilePath}
               onFileClick={(path) => navigateToFile(path)}
               refreshTick={fileRefreshTick}
+              onMoveToWindow={handleFileMoveToWindow}
             />
           ) : (
             <div className="flex flex-col items-center gap-3 px-4 py-10">
@@ -736,6 +720,13 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
             </div>
           )}
         </div>
+        <button
+          onClick={() => document.dispatchEvent(new CustomEvent('acc:new-session', { detail: { targetTabId: activeSessionId ?? '__root__' } }))}
+          className="mt-1 flex items-center justify-center gap-1.5 w-full py-2 text-xs text-zinc-500 hover:text-zinc-300 bg-brand-surface hover:bg-brand-panel border border-brand-panel/60 rounded-b-xl transition-colors flex-shrink-0"
+        >
+          <Plus size={12} />
+          New Terminal
+        </button>
       </div>
 
       {ctxMenu && (
