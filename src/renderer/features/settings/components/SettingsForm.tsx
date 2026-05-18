@@ -41,7 +41,7 @@ const HOTKEY_FIELDS: { key: keyof AppSettings['hotkeys']; label: string }[] = [
   { key: 'closeSession',   label: 'Close Session' },
   { key: 'openProject',    label: 'Open Project' },
   { key: 'commandPalette', label: 'Command Palette' },
-  { key: 'quickNote',      label: 'Toggle Notes' },
+  { key: 'projectPalette', label: 'Project Palette' },
   { key: 'showShortcuts',  label: 'Show Shortcuts' },
   { key: 'reviewChanges',  label: 'Review Changes' },
 ]
@@ -161,12 +161,11 @@ export function SettingsForm({ onClose }: Props): JSX.Element {
   const defaultShell       = watch('defaultShell') ?? ''
   const shellStartDir      = watch('shellStartDir') ?? ''
   const dataDirectory      = watch('dataDirectory') ?? ''
-  const notesDirectory     = watch('notesDirectory') ?? ''
-  const worktreesDirectory = watch('worktreesDirectory') ?? ''
   const defaultSessionDir  = watch('defaultSessionDir') ?? ''
   const confirmClose      = watch('confirmCloseSession')
   const resumeOnStartup   = watch('resumeOnStartup')
   const sandboxYoloMode   = watch('sandboxYoloMode')
+  const showAgentToasts   = watch('showAgentToasts')
   const hotkeys           = watch('hotkeys')
 
   const pickShell = async (): Promise<void> => {
@@ -182,16 +181,6 @@ export function SettingsForm({ onClose }: Props): JSX.Element {
   const pickDataDir = async (): Promise<void> => {
     const picked = await pickFolder()
     if (picked !== null) setValue('dataDirectory', picked)
-  }
-
-  const pickNotesDir = async (): Promise<void> => {
-    const picked = await pickFolder()
-    if (picked !== null) setValue('notesDirectory', picked)
-  }
-
-  const pickWorktreesDir = async (): Promise<void> => {
-    const picked = await pickFolder()
-    if (picked !== null) setValue('worktreesDirectory', picked)
   }
 
   const pickSessionDir = async (): Promise<void> => {
@@ -359,7 +348,7 @@ export function SettingsForm({ onClose }: Props): JSX.Element {
 
           <div className="flex flex-col gap-1.5">
             <Label>Data directory</Label>
-            <p className="text-[11px] text-zinc-600 -mt-1">Where Orbit stores notes, worktrees, and session layout. Defaults to ~/Orbit/.orbit</p>
+            <p className="text-[11px] text-zinc-600 -mt-1">Where Orbit stores session layout data. Defaults to ~/Orbit/.orbit</p>
             <div className="flex gap-2">
               <Input readOnly value={dataDirectory} placeholder="~/Orbit/.orbit" className="flex-1 text-xs text-zinc-400 cursor-default" />
               <Button type="button" variant="orbit" size="icon" onClick={pickDataDir} title="Browse" className="flex-shrink-0 h-9 w-9">
@@ -368,25 +357,6 @@ export function SettingsForm({ onClose }: Props): JSX.Element {
             </div>
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label>Notes directory <span className="text-zinc-600 font-normal">(override)</span></Label>
-            <div className="flex gap-2">
-              <Input readOnly value={notesDirectory} placeholder="~/Orbit/.orbit/notes" className="flex-1 text-xs text-zinc-400 cursor-default" />
-              <Button type="button" variant="orbit" size="icon" onClick={pickNotesDir} title="Browse" className="flex-shrink-0 h-9 w-9">
-                <FolderOpen size={14} />
-              </Button>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label>Worktrees directory <span className="text-zinc-600 font-normal">(override)</span></Label>
-            <div className="flex gap-2">
-              <Input readOnly value={worktreesDirectory} placeholder="~/Orbit/.orbit/worktrees" className="flex-1 text-xs text-zinc-400 cursor-default" />
-              <Button type="button" variant="orbit" size="icon" onClick={pickWorktreesDir} title="Browse" className="flex-shrink-0 h-9 w-9">
-                <FolderOpen size={14} />
-              </Button>
-            </div>
-          </div>
         </Panel>
 
         <Panel variant="inset" className="flex flex-col gap-3 p-5">
@@ -439,6 +409,19 @@ export function SettingsForm({ onClose }: Props): JSX.Element {
               id="sandbox-yolo"
               checked={sandboxYoloMode ?? true}
               onCheckedChange={(v) => setValue('sandboxYoloMode', v === true)}
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-0.5">
+              <Label htmlFor="show-agent-toasts" className="text-sm text-foreground font-normal cursor-pointer">
+                Agent status notifications
+              </Label>
+              <span className="text-xs text-zinc-500">Show toast notifications when an agent finishes or needs input</span>
+            </div>
+            <Checkbox
+              id="show-agent-toasts"
+              checked={showAgentToasts ?? true}
+              onCheckedChange={(v) => setValue('showAgentToasts', v === true)}
             />
           </div>
         </Panel>
