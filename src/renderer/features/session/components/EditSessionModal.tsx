@@ -1,9 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
-import { X } from 'lucide-react'
-import { createPortal } from 'react-dom'
-import { cn } from '../../../lib/utils'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../../components/ui/dialog'
 import { Input } from '../../../components/ui/input'
 import { Label } from '../../../components/ui/label'
+import { cn } from '../../../lib/utils'
 import { SESSION_COLORS, MAX_NAME_LENGTH } from '../session.service'
 import type { SessionMeta } from '@shared/ipc-types'
 
@@ -19,12 +18,7 @@ export function EditSessionModal({ meta, onSave, onDismiss }: EditSessionModalPr
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    inputRef.current?.select()
-    const handler = (e: KeyboardEvent): void => { if (e.key === 'Escape') onDismiss() }
-    document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
-  }, [onDismiss])
+  useEffect(() => { inputRef.current?.select() }, [])
 
   const validate = (v: string): string | null => {
     if (!v.trim()) return 'Name cannot be blank'
@@ -41,24 +35,17 @@ export function EditSessionModal({ meta, onSave, onDismiss }: EditSessionModalPr
 
   const isCustomColor = !(SESSION_COLORS as readonly string[]).includes(color)
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center"
-      onMouseDown={(e) => { if (e.target === e.currentTarget) onDismiss() }}
-    >
-      <div className="absolute inset-0 bg-black/50" />
-      <div className="relative bg-brand-surface border border-white/10 rounded-lg shadow-2xl shadow-black/70 w-80 flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-white/8">
-          <span className="text-sm font-semibold text-zinc-200">Edit Session</span>
-          <button onClick={onDismiss} className="text-zinc-500 hover:text-zinc-300 transition-colors">
-            <X size={14} />
-          </button>
-        </div>
+  return (
+    <Dialog open={true} onOpenChange={(open) => { if (!open) onDismiss() }}>
+      <DialogContent className="w-80" onCloseAutoFocus={(e) => e.preventDefault()}>
+        <DialogHeader>
+          <DialogTitle>Edit Session</DialogTitle>
+        </DialogHeader>
 
         <div className="flex flex-col gap-4 px-5 py-4">
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between">
-              <Label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Name</Label>
+              <Label variant="field">Name</Label>
               <span className={cn('text-xs', name.trim().length > MAX_NAME_LENGTH ? 'text-red-400' : 'text-zinc-600')}>
                 {name.trim().length}/{MAX_NAME_LENGTH}
               </span>
@@ -77,7 +64,7 @@ export function EditSessionModal({ meta, onSave, onDismiss }: EditSessionModalPr
           </div>
 
           <div className="flex flex-col gap-2">
-            <Label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Color</Label>
+            <Label variant="field">Color</Label>
             <div className="flex gap-2 flex-wrap">
               {SESSION_COLORS.map((c) => (
                 <button
@@ -107,7 +94,7 @@ export function EditSessionModal({ meta, onSave, onDismiss }: EditSessionModalPr
           </div>
         </div>
 
-        <div className="flex gap-2 justify-end px-5 py-3 border-t border-white/8">
+        <div className="flex gap-2 justify-end px-5 py-3 border-t border-white/[0.08]">
           <button
             onClick={onDismiss}
             className="px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors rounded"
@@ -122,8 +109,7 @@ export function EditSessionModal({ meta, onSave, onDismiss }: EditSessionModalPr
             Save
           </button>
         </div>
-      </div>
-    </div>,
-    document.body
+      </DialogContent>
+    </Dialog>
   )
 }

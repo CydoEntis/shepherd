@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
-import { createPortal } from 'react-dom'
-import { FolderOpen, Loader2, X } from 'lucide-react'
-import { cn } from '../../../lib/utils'
-import { pickFolder } from '../../window/window.service'
+import { FolderOpen, Loader2 } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../../components/ui/dialog'
 import { Input } from '../../../components/ui/input'
+import { Label } from '../../../components/ui/label'
+import { pickFolder } from '../../window/window.service'
 
 interface Props {
   onDismiss: () => void
@@ -40,33 +40,28 @@ export function NewWorkspaceModal({ onDismiss, onSave }: Props): JSX.Element {
     }
   }
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center"
-      onMouseDown={(e) => { if (e.target === e.currentTarget) onDismiss() }}
-    >
-      <div className="absolute inset-0 bg-black/50" />
-      <div className="relative bg-brand-surface border border-white/10 rounded-lg shadow-2xl shadow-black/70 w-80 flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-white/8">
-          <span className="text-sm font-semibold text-zinc-200">Open Project</span>
-          <button onClick={onDismiss} className="text-zinc-500 hover:text-zinc-300 transition-colors"><X size={14} /></button>
-        </div>
+  return (
+    <Dialog open={true} onOpenChange={(open) => { if (!open) onDismiss() }}>
+      <DialogContent className="w-80" onCloseAutoFocus={(e) => e.preventDefault()}>
+        <DialogHeader>
+          <DialogTitle>Open Project</DialogTitle>
+        </DialogHeader>
 
-        <div className="flex flex-col gap-4 px-5 py-4">
+        <div className="px-5 py-4 flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Name</label>
+            <Label variant="field">Name</Label>
             <Input
               ref={inputRef}
               value={name}
               onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') void handleCreate(); if (e.key === 'Escape') onDismiss() }}
+              onKeyDown={(e) => { if (e.key === 'Enter') void handleCreate() }}
               placeholder="my-project"
               className="bg-brand-bg/60 border-white/10 focus-visible:border-brand-accent/50"
             />
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider">Root Folder <span className="normal-case text-zinc-600 font-normal">(optional)</span></label>
+            <Label variant="field">Root Folder <span className="normal-case text-zinc-600 font-normal tracking-normal">(optional)</span></Label>
             <div className="flex gap-2">
               <Input
                 value={rootPath}
@@ -76,10 +71,7 @@ export function NewWorkspaceModal({ onDismiss, onSave }: Props): JSX.Element {
               />
               <button
                 onClick={() => void handlePickFolder()}
-                className={cn(
-                  'flex items-center justify-center w-9 h-9 rounded-lg border border-white/10 bg-brand-bg/60',
-                  'text-zinc-500 hover:text-zinc-300 hover:bg-white/10 transition-colors flex-shrink-0'
-                )}
+                className="flex items-center justify-center w-9 h-9 rounded-lg border border-white/10 bg-brand-bg/60 text-zinc-500 hover:text-zinc-300 hover:bg-white/10 transition-colors flex-shrink-0"
                 title="Browse"
               >
                 <FolderOpen size={13} />
@@ -88,7 +80,7 @@ export function NewWorkspaceModal({ onDismiss, onSave }: Props): JSX.Element {
           </div>
         </div>
 
-        <div className="flex gap-2 justify-end px-5 py-3 border-t border-white/8">
+        <div className="flex gap-2 justify-end px-5 py-3 border-t border-white/[0.08]">
           <button
             onClick={onDismiss}
             className="px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors rounded"
@@ -104,8 +96,7 @@ export function NewWorkspaceModal({ onDismiss, onSave }: Props): JSX.Element {
             Open
           </button>
         </div>
-      </div>
-    </div>,
-    document.body
+      </DialogContent>
+    </Dialog>
   )
 }
