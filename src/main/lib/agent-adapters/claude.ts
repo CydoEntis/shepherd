@@ -76,11 +76,12 @@ function parseJsonEvent(line: string, buf: ParseBuffer): AgentEvent[] {
     }
 
     case 'result': {
+      const isError = ev.is_error === true
       const ms = typeof ev.duration_ms === 'number' ? ev.duration_ms : null
       const cost = typeof ev.total_cost_usd === 'number' ? (ev.total_cost_usd as number) : null
       const meta = [ms != null ? `${(ms / 1000).toFixed(1)}s` : null, cost != null ? `$${cost.toFixed(4)}` : null]
         .filter(Boolean).join(' · ')
-      events.push({ kind: 'status', status: 'waiting-input' })
+      events.push({ kind: 'status', status: isError ? 'waiting-input' : 'done' })
       events.push({
         kind: 'display',
         content: `\r\n\x1b[32m✓ Done\x1b[0m${meta ? `  \x1b[90m${meta}\x1b[0m` : ''}\r\n\r\n`

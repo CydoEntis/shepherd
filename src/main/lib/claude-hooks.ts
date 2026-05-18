@@ -5,12 +5,30 @@ import { homedir } from 'os'
 // Written to ~/.claude/orbit-hook.js on first session creation.
 // Using a script file avoids shell quoting issues with `node -e "..."` on Windows —
 // cmd.exe/PowerShell handle quoted file paths more reliably than inline JS.
+//
+// When the path arg ends with "/dynamic" the script reads stdin (Claude Code pipes
+// {"tool_name":"..."} there for PreToolUse hooks) and picks the status based on the
+// tool name — user-input tools → waiting-input, everything else → running.
+// Fixed-path calls (Stop hook) skip stdin and POST immediately.
 const HOOK_SCRIPT =
   `try{var a=process.argv.slice(2),port=+a[0],p=a[1];` +
-  `var r=require('http').request({hostname:'127.0.0.1',port:port,path:p,method:'POST'},function(){process.exit(0)});` +
-  `r.on('error',function(){process.exit(0)});` +
-  `setTimeout(function(){process.exit(0)},2000);` +
-  `r.end()}catch(e){process.exit(0)}`
+  `function post(path){` +
+    `var r=require('http').request({hostname:'127.0.0.1',port:port,path:path,method:'POST'},function(){process.exit(0)});` +
+    `r.on('error',function(){process.exit(0)});` +
+    `setTimeout(function(){process.exit(0)},2000);` +
+    `r.end()}` +
+  `if(p.slice(-8)==='/dynamic'){` +
+    `var base=p.slice(0,-8),chunks=[];` +
+    `process.stdin.on('data',function(d){chunks.push(d)});` +
+    `process.stdin.on('end',function(){` +
+      `var status='running';` +
+      `try{var d=JSON.parse(Buffer.concat(chunks).toString());` +
+      `if(/AskUser|AskFollowup|UserInput|input_required/i.test(d.tool_name||''))status='waiting-input';}` +
+      `catch(e){}` +
+      `post(base+'/'+status);` +
+    `});` +
+  `}else{post(p)}` +
+  `}catch(e){process.exit(0)}`
 
 // Always write to the GLOBAL settings file (~/.claude/settings.local.json).
 // Claude Code reads this regardless of project structure, so it works even when
@@ -42,9 +60,9 @@ export function writeClaudeHooksConfig(sessionId: string, port: number): void {
   const base = `/orbit/status/${sessionId}`
   if (!hooks.PreToolUse) hooks.PreToolUse = []
   if (!hooks.Stop) hooks.Stop = []
-  hooks.PreToolUse.push({ matcher: '.*', hooks: [{ type: 'command', command: nodeCmd(port, `${base}/running`) }] })
+  hooks.PreToolUse.push({ matcher: '.*', hooks: [{ type: 'command', command: nodeCmd(port, `${base}/dynamic`) }] })
   // Stop entries omit matcher — it is a lifecycle event, not a tool event
-  hooks.Stop.push({ hooks: [{ type: 'command', command: nodeCmd(port, `${base}/waiting-input`) }] })
+  hooks.Stop.push({ hooks: [{ type: 'command', command: nodeCmd(port, `${base}/done`) }] })
   settings.hooks = hooks
 
   try {

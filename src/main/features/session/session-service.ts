@@ -35,7 +35,7 @@ startAgentStatusServer()
       hookIdleTimers.delete(sessionId)
       const updated = updateSessionMeta(sessionId, { agentStatus: status })
       if (updated) { broadcastMetaUpdate(updated); syncTaskbarProgress() }
-      if (status === 'waiting-input') {
+      if (status === 'waiting-input' || status === 'done') {
         hookIdleTimers.set(sessionId, setTimeout(() => {
           hookIdleTimers.delete(sessionId)
           const idled = updateSessionMeta(sessionId, { agentStatus: 'idle' })
@@ -132,10 +132,6 @@ export function createSession(
     groupId: payload.groupId,
     yoloMode: payload.yoloMode,
     sandboxed: sandboxed || undefined,
-    worktreePath: payload.worktreePath,
-    worktreeBranch: payload.worktreeBranch,
-    worktreeBaseBranch: payload.worktreeBaseBranch,
-    projectRoot: payload.projectRoot,
     workspaceId: payload.workspaceId,
   }
 
@@ -216,7 +212,7 @@ export { listSessions }
 
 export function patchSession(
   sessionId: string,
-  patch: Partial<Pick<SessionMeta, 'name' | 'color' | 'groupId' | 'taskStatus' | 'worktreePath' | 'worktreeBranch' | 'worktreeBaseBranch' | 'projectRoot' | 'workspaceId'>>
+  patch: Partial<Pick<SessionMeta, 'name' | 'color' | 'groupId' | 'taskStatus' | 'workspaceId'>>
 ): SessionMeta | undefined {
   const updated = updateSessionMeta(sessionId, patch)
   if (updated) broadcastMetaUpdate(updated)

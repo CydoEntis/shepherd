@@ -25,6 +25,8 @@ function NotificationItem({ n, onAction, onDismiss }: {
       <div className="mt-0.5 shrink-0">
         {n.type === 'agent-done'
           ? <div className="w-2 h-2 rounded-full bg-emerald-400 mt-1" />
+          : n.type === 'agent-waiting'
+          ? <div className="w-2 h-2 rounded-full bg-amber-400 mt-1" />
           : <Sparkles size={13} className="text-brand-accent" />
         }
       </div>

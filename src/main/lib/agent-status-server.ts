@@ -18,7 +18,7 @@ export function startAgentStatusServer(): Promise<number> {
   if (_port !== null) return Promise.resolve(_port)
   return new Promise((resolve, reject) => {
     const server = createServer((req, res) => {
-      const match = req.url?.match(/^\/orbit\/status\/([^/]+)\/(running|waiting-input|idle)$/)
+      const match = req.url?.match(/^\/orbit\/status\/([^/]+)\/(running|waiting-input|idle|done)$/)
       if (match && req.method === 'POST') {
         const [, sessionId, status] = match
         for (const cb of _callbacks) cb(sessionId, status as AgentStatus)

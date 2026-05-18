@@ -3,7 +3,7 @@ import type { RootStore } from '../../store/root.store'
 
 export interface AppNotification {
   id: string
-  type: 'agent-done' | 'release-notes'
+  type: 'agent-done' | 'agent-waiting' | 'release-notes'
   title: string
   tabId?: string
   read: boolean

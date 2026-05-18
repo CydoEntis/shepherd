@@ -53,6 +53,10 @@ const AGENT_WRAP_UP_RE = /※/
 // The > prompt ends with cursor-repositioning sequences that ANSI_RE may not fully
 // strip, so we don't anchor to $ — just require "> " at the start of a line.
 const AGENT_PROMPT_RE = /(^|[\r\n])> /
+// Patterns that indicate the agent is explicitly waiting for user input mid-task
+// (permission prompts, yes/no questions, interactive selection menus).
+// Only checked while running so the initial startup menu never false-fires.
+const AGENT_BLOCKED_RE = /\bDo you want\b|\bAllow command\b|\[Y\/n\]|\(y\/n\)|Enter to select\s*[·•]\s*↑\/↓|\bYour input\b/i
 
 // Strips ANSI escape sequences so control codes don't break pattern matching.
 // The trailing branch also catches single-character sequences like ESC= and ESC>
@@ -124,7 +128,7 @@ export class PtyProcess {
             if (ev.kind === 'status') {
               this.clearActivityTimers()
               this.setAgentStatus(ev.status)
-              if (ev.status === 'waiting-input') {
+              if (ev.status === 'waiting-input' || ev.status === 'done') {
                 this.idleTimer = setTimeout(() => this.setAgentStatus('idle'), 5_000)
               }
             } else if (ev.kind === 'display') {
@@ -175,7 +179,7 @@ export class PtyProcess {
   }
 
   // Resets the output-inactivity watchdog for agent sessions. If the agent goes
-  // quiet for 5 seconds while in running state, it's done — transition to waiting-input.
+  // quiet for 5 seconds while in running state, it's done — transition to done.
   // This is the primary safety net when OSC 9;4;0 fails to fire (e.g. hook errors).
   private resetInactivityTimer(): void {
     if (this.agentStatus !== 'running') return
@@ -183,7 +187,7 @@ export class PtyProcess {
     this.inactivityTimer = setTimeout(() => {
       this.inactivityTimer = null
       if (this.agentStatus === 'running') {
-        this.setAgentStatus('waiting-input')
+        this.setAgentStatus('done')
         this.idleTimer = setTimeout(() => { this.setAgentStatus('idle') }, 5_000)
       }
     }, 5_000)
@@ -247,8 +251,7 @@ export class PtyProcess {
     if (OSC94_DONE_RE.test(this.detectionBuffer)) {
       this.detectionBuffer = ''
       this.clearActivityTimers()
-      this.setAgentStatus('waiting-input')
-      this.idleTimer = setTimeout(() => { this.setAgentStatus('idle') }, 5_000)
+      this.setAgentStatus('done')
       return
     }
     if (OSC94_WORKING_RE.test(this.detectionBuffer)) {
@@ -296,27 +299,32 @@ export class PtyProcess {
       return
     }
 
-    // OSC fallback for agent sessions: ※ (wrap-up) and > prompt are Claude Code-specific
-    // markers reliable enough to use even when OSC 9;4 fails to fire (e.g. hook errors).
-    // Only checked when already running so the persistent > input bar doesn't false-fire.
+    // OSC fallback for agent sessions. Only checked when already running so the
+    // persistent > input bar doesn't false-fire while the agent is idle.
     const plain = this.detectionBuffer.replace(ANSI_RE, '')
     if (this.agentStatus === 'running') {
-      if (AGENT_WRAP_UP_RE.test(plain)) {
-        this.detectionBuffer = ''
-        this.clearActivityTimers()
-        this.waitingTimer = setTimeout(() => {
-          this.setAgentStatus('waiting-input')
-          this.idleTimer = setTimeout(() => { this.setAgentStatus('idle') }, 5_000)
-        }, 1_000)
-        return
-      }
-      if (AGENT_PROMPT_RE.test(plain)) {
+      // Explicit blocking prompt (permission request, yes/no, interactive menu).
+      if (AGENT_BLOCKED_RE.test(plain)) {
         this.detectionBuffer = ''
         this.clearActivityTimers()
         this.setAgentStatus('waiting-input')
         this.idleTimer = setTimeout(() => { this.setAgentStatus('idle') }, 5_000)
         return
       }
+      // ※ wrap-up marker: Claude is finishing its task — transition to done after a beat.
+      if (AGENT_WRAP_UP_RE.test(plain)) {
+        this.detectionBuffer = ''
+        this.clearActivityTimers()
+        this.waitingTimer = setTimeout(() => {
+          this.setAgentStatus('done')
+          this.idleTimer = setTimeout(() => { this.setAgentStatus('idle') }, 5_000)
+        }, 1_000)
+        return
+      }
+      // NOTE: AGENT_PROMPT_RE ("> ") is intentionally NOT used here.
+      // It matches the selected-item indicator in Claude's menus ("> 1. Option"),
+      // which races ahead of the "Enter to select..." footer and false-fires "done"
+      // before AGENT_BLOCKED_RE can detect the blocking prompt.
     }
 
     if (this.isAgentSession) return
@@ -347,7 +355,7 @@ export class PtyProcess {
 
     const waitMs = isWrappingUp ? 1_000 : 1_500
     this.waitingTimer = setTimeout(() => {
-      this.setAgentStatus('waiting-input')
+      this.setAgentStatus('done')
       this.idleTimer = setTimeout(() => { this.setAgentStatus('idle') }, 5_000)
     }, waitMs)
   }
