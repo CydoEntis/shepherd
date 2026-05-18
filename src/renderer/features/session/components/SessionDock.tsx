@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Plus, Pencil, ChevronRight, ArrowRightLeft } from 'lucide-react'
+import { X, Plus, Pencil, ChevronRight, ArrowRightLeft, Terminal, FilePlus } from 'lucide-react'
 import { useStore } from '../../../store/root.store'
 import { killSession, patchSession } from '../session.service'
 import { detachTab, listWindows, moveToWindow } from '../../window/window.service'
@@ -53,8 +53,10 @@ export function SessionDock({ activeSessionId, onSelectSession, showAddButton = 
   const [submenuY, setSubmenuY] = useState(0)
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const [showPlusMenu, setShowPlusMenu] = useState(false)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
+  const plusBtnRef = useRef<HTMLButtonElement>(null)
   const moveTriggerRef = useRef<HTMLButtonElement>(null)
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -446,11 +448,11 @@ export function SessionDock({ activeSessionId, onSelectSession, showAddButton = 
 
       {showAddButton && (
         <button
-          onClick={() => document.dispatchEvent(new CustomEvent('acc:new-session'))}
-          className="ml-auto flex-shrink-0 flex items-center gap-1.5 px-3 py-1 rounded-lg text-zinc-300 hover:text-zinc-100 bg-brand-surface hover:bg-brand-panel border border-brand-panel/60 shadow-sm transition-all text-xs font-medium"
+          ref={plusBtnRef}
+          onClick={() => setShowPlusMenu((v) => !v)}
+          className="ml-auto flex-shrink-0 flex items-center justify-center w-7 h-7 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-brand-panel border border-transparent hover:border-brand-panel/60 transition-all"
         >
-          <Plus size={12} />
-          <span>Terminal</span>
+          <Plus size={13} />
         </button>
       )}
 
@@ -460,6 +462,49 @@ export function SessionDock({ activeSessionId, onSelectSession, showAddButton = 
           onSave={(name, color) => void handleEditSave(name, color)}
           onDismiss={() => setEditSessionId(null)}
         />
+      )}
+
+      {showPlusMenu && createPortal(
+        (() => {
+          const rect = plusBtnRef.current?.getBoundingClientRect()
+          const top = (rect?.bottom ?? 0) + 6
+          const right = window.innerWidth - (rect?.right ?? 0)
+          const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId && !w.isRoot)
+          const workspaceRoot = activeWorkspace?.rootPath ? normalizePath(activeWorkspace.rootPath) : null
+          return (
+            <>
+              <div className="fixed inset-0 z-[9998]" onMouseDown={() => setShowPlusMenu(false)} />
+              <div
+                className="fixed z-[9999] bg-brand-panel border border-white/10 rounded-lg shadow-2xl shadow-black/60 py-1 min-w-[148px]"
+                style={{ top, right }}
+              >
+                <button
+                  onMouseDown={() => {
+                    setShowPlusMenu(false)
+                    document.dispatchEvent(new CustomEvent('acc:new-session'))
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/10 hover:text-zinc-100 transition-colors"
+                >
+                  <Terminal size={11} className="flex-shrink-0" />
+                  New Terminal
+                </button>
+                <button
+                  disabled={!workspaceRoot}
+                  onMouseDown={() => {
+                    if (!workspaceRoot) return
+                    setShowPlusMenu(false)
+                    document.dispatchEvent(new CustomEvent('acc:new-file-at-root', { detail: { parentDir: workspaceRoot, type: 'file' } }))
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/10 hover:text-zinc-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <FilePlus size={11} className="flex-shrink-0" />
+                  New File
+                </button>
+              </div>
+            </>
+          )
+        })(),
+        document.body
       )}
 
       {ctxMenu && createPortal(
