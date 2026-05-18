@@ -1,5 +1,4 @@
 import { useEffect, useRef } from 'react'
-import { toast } from 'sonner'
 import { ipc } from '../../../lib/ipc'
 import { IPC } from '@shared/ipc-channels'
 import { useStore } from '../../../store/root.store'
@@ -93,19 +92,15 @@ export function useSessionLifecycle(): void {
       const prev = sessions[meta.sessionId]
 
       if (prev?.agentStatus === 'running' && meta.agentCommand) {
-        const toastsEnabled = useStore.getState().settings.showAgentToasts ?? true
+        // TODO: agent toast notifications disabled — needs more investigation before re-enabling.
+        // The agent status detection (running → done/waiting-input) and toast timing
+        // have reliability issues that require deeper investigation.
         if (meta.agentStatus === 'done') {
           const tabId = findTabForSession(paneTree, meta.sessionId)
           if (tabId) {
             const isBackground = tabId !== activeSessionId
             useStore.getState().addNotification({ type: 'agent-done', title: `${meta.name} finished`, tabId })
             if (!isBackground) useStore.getState().markTabNotificationsRead(tabId)
-            if (toastsEnabled) toast.success(
-              `${meta.name} finished`,
-              isBackground
-                ? { action: { label: 'Switch', onClick: () => useStore.getState().setActiveSession(tabId) } }
-                : undefined
-            )
           }
         } else if (meta.agentStatus === 'waiting-input') {
           const tabId = findTabForSession(paneTree, meta.sessionId)
@@ -113,12 +108,6 @@ export function useSessionLifecycle(): void {
             const isBackground = tabId !== activeSessionId
             useStore.getState().addNotification({ type: 'agent-waiting', title: `${meta.name} is awaiting input`, tabId })
             if (!isBackground) useStore.getState().markTabNotificationsRead(tabId)
-            if (toastsEnabled) toast.warning(
-              `${meta.name} is awaiting input`,
-              isBackground
-                ? { action: { label: 'Switch', onClick: () => useStore.getState().setActiveSession(tabId) } }
-                : undefined
-            )
           }
         }
       }
@@ -152,11 +141,12 @@ export function useSessionLifecycle(): void {
       }
 
       removePaneBySessionId(sessionId)
-      if (exitCode === 0) {
-        toast.success(`${sessionName} finished`)
-      } else {
-        toast.error(`${sessionName} exited (code ${exitCode})`)
-      }
+      // TODO: agent exit toast notifications disabled — needs more investigation before re-enabling.
+      // if (exitCode === 0) {
+      //   toast.success(`${sessionName} finished`)
+      // } else {
+      //   toast.error(`${sessionName} exited (code ${exitCode})`)
+      // }
     })
 
     const offReattached = ipc.on(IPC.WINDOW_TAB_REATTACHED, (payload) => {

@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { toast } from 'sonner'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
@@ -395,19 +394,11 @@ export function useTerminal(sessionId: string, containerRef: React.RefObject<HTM
         })
       )
 
-      // OSC 777;notify;Title;Message — scripts and agents can push toast notifications
-      // directly from the terminal without going through IPC. Handled here (renderer)
-      // because it's display-only and avoids an extra round-trip through the main process.
+      // TODO: OSC 777 toast notifications disabled — needs more investigation before re-enabling.
+      // OSC 777;notify;Title;Message lets scripts push toasts from the terminal, but
+      // the broader notification system needs a reliability review first.
       oscDisposables.push(
-        terminal.parser.registerOscHandler(777, (data) => {
-          const semi = data.indexOf(';')
-          if (data.slice(0, semi) !== 'notify') return true
-          const rest = data.slice(semi + 1)
-          const semi2 = rest.indexOf(';')
-          const title = semi2 === -1 ? rest : rest.slice(0, semi2)
-          const message = semi2 === -1 ? '' : rest.slice(semi2 + 1)
-          const sessionName = useStore.getState().sessions[sessionId]?.name
-          toast(title || sessionName || 'Terminal', { description: message || undefined })
+        terminal.parser.registerOscHandler(777, (_data) => {
           return true
         })
       )
