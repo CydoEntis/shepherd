@@ -674,6 +674,35 @@ export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileC
     return () => document.removeEventListener('acc:new-file-at-root', handler)
   }, [projectRoot])
 
+  useEffect(() => {
+    const collapseAll = (): void => {
+      setExpanded(new Set())
+      saveExpanded(projectRoot, new Set())
+    }
+    const expandAll = (): void => {
+      const dirs = new Set<string>()
+      const collectDirs = (entries: FsEntry[]): void => {
+        for (const e of entries) {
+          if (!e.isDirectory) continue
+          const p = norm(e.path)
+          dirs.add(p)
+          const children = childrenMap.get(p)
+          if (children) collectDirs(children)
+        }
+      }
+      collectDirs(rootEntries)
+      setExpanded(dirs)
+      saveExpanded(projectRoot, dirs)
+      dirs.forEach((p) => loadChildren(p))
+    }
+    document.addEventListener('acc:collapse-all-folders', collapseAll)
+    document.addEventListener('acc:expand-all-folders', expandAll)
+    return () => {
+      document.removeEventListener('acc:collapse-all-folders', collapseAll)
+      document.removeEventListener('acc:expand-all-folders', expandAll)
+    }
+  }, [projectRoot, rootEntries, childrenMap, loadChildren])
+
   if (!projectRoot) {
     return (
       <div className="flex-1 flex items-center justify-center">

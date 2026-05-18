@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
-import { Plus, ChevronDown, ChevronRight, FolderOpen, X, FilePlus2, FolderPlus, ExternalLink, FolderX } from 'lucide-react'
+import { Plus, ChevronDown, ChevronRight, FolderOpen, X, FilePlus2, FolderPlus, ExternalLink, FolderX, ChevronsDownUp, ChevronsUpDown } from 'lucide-react'
 import { useStore } from '../../../store/root.store'
 import { patchSession, killSession } from '../../session/session.service'
 import { EditSessionModal } from '../../session/components/EditSessionModal'
@@ -687,15 +687,23 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
                 >
                   <FolderPlus size={14} />
                 </button>
+                <button
+                  onClick={() => document.dispatchEvent(new CustomEvent('acc:expand-all-folders'))}
+                  title="Expand All"
+                  className="text-zinc-500 hover:text-zinc-300 transition-colors flex-shrink-0 p-1"
+                >
+                  <ChevronsUpDown size={14} />
+                </button>
+                <button
+                  onClick={() => document.dispatchEvent(new CustomEvent('acc:collapse-all-folders'))}
+                  title="Collapse All"
+                  className="text-zinc-500 hover:text-zinc-300 transition-colors flex-shrink-0 p-1"
+                >
+                  <ChevronsDownUp size={14} />
+                </button>
               </>
             )}
-            <button
-              onClick={() => document.dispatchEvent(new CustomEvent('acc:open-project'))}
-              title="Open Folder"
-              className="text-zinc-500 hover:text-zinc-300 transition-colors flex-shrink-0 p-1"
-            >
-              <FolderOpen size={14} />
-            </button>
+
           </div>
           {fileTreeRoot ? (
             <FileTree
