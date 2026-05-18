@@ -7,7 +7,6 @@ import type { SessionMeta } from '@shared/ipc-types'
 export interface SessionRowProps {
   meta: SessionMeta
   activeSessionId: string | null
-  worktreeStats: Record<string, { added: number; deleted: number; commits: number }>
   isNoWorkspace: boolean
   dragging: boolean
   onSelectSession: (id: string) => void
@@ -18,15 +17,13 @@ export interface SessionRowProps {
   paneCount?: number
 }
 
-export function SessionRow({ meta, activeSessionId, worktreeStats, isNoWorkspace, dragging, onSelectSession, onEditMeta, onCtxMenu, onDragStart, onDragEnd, paneCount }: SessionRowProps): JSX.Element {
+export function SessionRow({ meta, activeSessionId, isNoWorkspace, dragging, onSelectSession, onEditMeta, onCtxMenu, onDragStart, onDragEnd, paneCount }: SessionRowProps): JSX.Element {
   const { startDrag, endDrag } = useLayoutDnd()
   const isSelected = activeSessionId === meta.sessionId
   const isRunning = meta.status === 'running'
   const agentStatus = meta.agentStatus ?? 'idle'
   const sessionColor = meta.color ?? SESSION_COLORS[0]
-  const stats = isNoWorkspace ? undefined : worktreeStats[meta.sessionId]
-  const hasStats = stats && (stats.added > 0 || stats.deleted > 0)
-  const subtext = isNoWorkspace ? shortPath(meta.cwd) : (meta.worktreeBranch ?? shortPath(meta.cwd))
+  const subtext = shortPath(meta.cwd)
 
   return (
     <button
@@ -59,18 +56,6 @@ export function SessionRow({ meta, activeSessionId, worktreeStats, isNoWorkspace
           >
             {paneCount}
           </span>
-        )}
-        {!isNoWorkspace && (
-          <div className="flex items-center gap-1.5 flex-shrink-0">
-            {hasStats && (
-              <span className="text-[10px] font-mono leading-none">
-                <span className="text-green-500">+{stats.added}</span>
-                <span className="text-zinc-600 mx-0.5">·</span>
-                <span className="text-red-500">-{stats.deleted}</span>
-              </span>
-            )}
-            {stats && stats.commits > 0 && <span className="text-[10px] text-zinc-500 leading-none">⑂{stats.commits}</span>}
-          </div>
         )}
       </div>
       <div className={cn('pl-3.5 text-[10px] truncate font-mono', isSelected ? 'text-zinc-400' : 'text-zinc-600')}>{subtext}</div>

@@ -19,26 +19,26 @@ export function GroupCtxMenu({ groupCtxMenu, onDismiss, onEdit, onDelete, onOpen
         onContextMenu={(e) => { e.preventDefault(); onDismiss() }}
       />
       <div
-        className="fixed z-[9999] bg-brand-surface border border-brand-panel/60 rounded shadow-xl py-1 min-w-[160px]"
+        className="fixed z-[9999] bg-brand-panel border border-white/10 rounded shadow-2xl shadow-black/60 py-1 min-w-[160px]"
         style={{ left: Math.min(x, window.innerWidth - 180), top: Math.min(y, window.innerHeight - 130) }}
       >
         <button
           onMouseDown={(e) => { e.stopPropagation(); onOpenAsLayout(group.id); onDismiss() }}
-          className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors"
+          className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/10 hover:text-zinc-100 transition-colors"
         >
           <Columns2 size={12} />Open as Layout
         </button>
-        <div className="my-1 border-t border-brand-panel/60" />
+        <div className="my-1 border-t border-white/10" />
         <button
           onMouseDown={(e) => { e.stopPropagation(); onEdit(group); onDismiss() }}
-          className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors"
+          className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/10 hover:text-zinc-100 transition-colors"
         >
           <Pencil size={12} />Rename / Recolor
         </button>
-        <div className="my-1 border-t border-brand-panel/60" />
+        <div className="my-1 border-t border-white/10" />
         <button
           onMouseDown={(e) => { e.stopPropagation(); onDelete(group.id); onDismiss() }}
-          className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-red-400 hover:bg-brand-panel hover:text-red-300 transition-colors"
+          className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-red-400 hover:bg-white/10 hover:text-red-300 transition-colors"
         >
           <X size={12} />Delete Group
         </button>

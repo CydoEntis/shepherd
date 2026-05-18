@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Search, X, FileText, FolderOpen, FilePlus2, FolderPlus } from 'lucide-react'
-import { findFiles, copyFile } from '../fs.service'
+import { findFiles, copyPath, moveFileToWindow } from '../fs.service'
 import { FileTree } from './FileTree'
 import { useStore } from '../../../store/root.store'
-import { makeFileEditorLeaf, collectFileEditorLeaves } from '../../layout/layout-tree'
+import { makeFileEditorLeaf, collectFileEditorLeaves, findTabForSession } from '../../layout/layout-tree'
 import { cn, normalizePath } from '../../../lib/utils'
 
 interface Props {
@@ -24,10 +24,13 @@ function fuzzyMatch(str: string, query: string): boolean {
   return qi === q.length
 }
 
-const IGNORE_SEGMENTS = new Set(['node_modules', '.git', 'dist', '.next', 'out', 'build', '__pycache__', '.venv'])
-
 function isIgnored(p: string): boolean {
-  return p.split('/').some((seg) => IGNORE_SEGMENTS.has(seg))
+  return p.split('/').some((seg) => seg.startsWith('.') && seg.length > 1 ||
+    seg === 'node_modules' || seg === 'vendor' || seg === 'bower_components' ||
+    seg === 'build' || seg === 'dist' || seg === 'out' || seg === 'target' ||
+    seg === '__pycache__' || seg === 'venv' || seg === 'env' ||
+    seg === 'coverage' || seg === 'logs' || seg === 'tmp' || seg === 'temp'
+  )
 }
 
 export function FileFinderModal({ open, rootPath, activeTabId, onClose }: Props): JSX.Element | null {
@@ -42,6 +45,26 @@ export function FileFinderModal({ open, rootPath, activeTabId, onClose }: Props)
 
   const refresh = useCallback(() => setRefreshTick((t) => t + 1), [])
 
+  const sessions = useStore((s) => s.sessions)
+  const tabOrder = useStore((s) => s.tabOrder)
+  const paneTree = useStore((s) => s.paneTree)
+  const setActiveSession = useStore((s) => s.setActiveSession)
+  const setFocusedSession = useStore((s) => s.setFocusedSession)
+
+  const workspaceSessions = useMemo(() =>
+    tabOrder
+      .map((id) => sessions[id])
+      .filter((m) => m?.status === 'running'),
+    [tabOrder, sessions]
+  )
+
+  const handleMoveToWindow = useCallback(async (filePath: string, targetWindowId: string | null): Promise<void> => {
+    try { await moveFileToWindow(filePath, targetWindowId) } catch {}
+    const tabId = `file:${normalizePath(filePath)}`
+    const state = useStore.getState()
+    if (state.fileTabs[tabId]) state.closeFileTab(tabId)
+  }, [])
+
   const handleNewFile = useCallback(() => {
     document.dispatchEvent(new CustomEvent('acc:new-file-at-root', { detail: { parentDir: rootPath, type: 'file' } }))
   }, [rootPath])
@@ -52,6 +75,7 @@ export function FileFinderModal({ open, rootPath, activeTabId, onClose }: Props)
 
   const handleDropOnModal = useCallback(async (e: React.DragEvent) => {
     e.preventDefault()
+    e.stopPropagation()
     setIsDragOver(false)
     if (!rootPath) return
     const files = Array.from(e.dataTransfer.files)
@@ -59,10 +83,10 @@ export function FileFinderModal({ open, rootPath, activeTabId, onClose }: Props)
     const normalized = normalizePath(rootPath)
     await Promise.all(
       files.map(async (file) => {
-        const src = (file as unknown as { path: string }).path
+        const src = window.electronWebUtils.getPathForFile(file)
         if (!src) return
         const dest = normalized.replace(/\/$/, '') + '/' + file.name
-        try { await copyFile(src, dest) } catch {}
+        try { await copyPath(src, dest) } catch {}
       })
     )
     refresh()
@@ -230,6 +254,28 @@ export function FileFinderModal({ open, rootPath, activeTabId, onClose }: Props)
           </button>
         </div>
 
+        {/* Pinned sessions */}
+        {workspaceSessions.length > 0 && (
+          <div className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 border-b border-brand-panel/60 overflow-x-auto">
+            <span className="text-[10px] text-zinc-600 uppercase tracking-wider flex-shrink-0 mr-0.5">Sessions</span>
+            {workspaceSessions.map((m) => (
+              <button
+                key={m.sessionId}
+                onClick={() => {
+                  const tabId = findTabForSession(paneTree, m.sessionId) ?? m.sessionId
+                  setActiveSession(tabId)
+                  setFocusedSession(m.sessionId)
+                  onClose()
+                }}
+                className="flex-shrink-0 flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-brand-panel/60 hover:bg-brand-panel text-zinc-400 hover:text-zinc-100 transition-colors"
+              >
+                <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: m.color }} />
+                {m.name}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Search */}
         <div className="flex-shrink-0 flex items-center gap-2.5 px-3 py-2.5 border-b border-brand-panel/60">
           <Search size={13} className="text-zinc-500 flex-shrink-0" />
@@ -289,6 +335,7 @@ export function FileFinderModal({ open, rootPath, activeTabId, onClose }: Props)
                 projectRoot={rootPath}
                 onFileClick={(path) => openFile(path)}
                 refreshTick={refreshTick}
+                onMoveToWindow={handleMoveToWindow}
               />
               {isDragOver && (
                 <div className="absolute inset-0 flex items-center justify-center bg-brand-bg/60 pointer-events-none rounded-xl">

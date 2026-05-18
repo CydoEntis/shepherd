@@ -1,7 +1,7 @@
 import { useCallback } from 'react'
 import { PaneTreeRenderer } from '../../terminal/components/PaneTreeRenderer'
+import { WorkspaceDashboard } from './WorkspaceDashboard'
 import { useStore } from '../../../store/root.store'
-import { removeWorktree } from '../../fs/fs.service'
 
 interface Props {
   sessionId: string
@@ -12,20 +12,24 @@ export function AgentMonitorLayout({ sessionId, onSessionClose }: Props): JSX.El
   const paneTree = useStore((s) => s.paneTree[sessionId] ?? null)
 
   const handleCloseLastPane = useCallback(() => {
-    const session = useStore.getState().sessions[sessionId]
-    if (session?.worktreePath && session?.projectRoot) {
-      removeWorktree(session.projectRoot, session.worktreePath).catch(() => {})
-    }
     onSessionClose?.()
-  }, [sessionId, onSessionClose])
+  }, [onSessionClose])
 
-  if (!paneTree) return <div className="flex-1 min-h-0" />
+  if (!paneTree) return (
+    <div className="relative w-full h-full">
+      <div className="w-full h-full bg-brand-surface">
+        <WorkspaceDashboard />
+      </div>
+    </div>
+  )
 
   return (
-    <PaneTreeRenderer
-      node={paneTree}
-      tabId={sessionId}
-      onCloseLastPane={handleCloseLastPane}
-    />
+    <div className="w-full h-full">
+      <PaneTreeRenderer
+        node={paneTree}
+        tabId={sessionId}
+        onCloseLastPane={handleCloseLastPane}
+      />
+    </div>
   )
 }

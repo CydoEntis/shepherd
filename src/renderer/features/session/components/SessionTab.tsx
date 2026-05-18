@@ -1,10 +1,11 @@
 ﻿import { useState } from 'react'
-import { X, Loader2, ShieldCheck } from 'lucide-react'
+import { X, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '../../../lib/utils'
 import type { SessionMeta } from '@shared/ipc-types'
 import { killSession, patchSession, SESSION_COLORS as TAB_COLORS } from '../session.service'
 import { useStore } from '../../../store/root.store'
+import { useLayoutDnd } from '../../layout/dnd/LayoutDndContext'
 import { useConfirmClose } from '../hooks/useConfirmClose'
 import { EditSessionModal } from './EditSessionModal'
 
@@ -23,6 +24,7 @@ interface Props {
 export function SessionTab({ meta, isActive, isDragOver, onActivate, onContextMenu, onDragStart, onDragOver, onDrop, onDragEnd }: Props): JSX.Element {
   const removeTab = useStore((s) => s.removeTab)
   const upsertSession = useStore((s) => s.upsertSession)
+  const { startDrag, endDrag } = useLayoutDnd()
   const [editOpen, setEditOpen] = useState(false)
   const { requestClose, modal: closeModal } = useConfirmClose()
 
@@ -31,8 +33,6 @@ export function SessionTab({ meta, isActive, isDragOver, onActivate, onContextMe
   const agentStatus = meta.agentStatus ?? 'idle'
   const isWorking = !isExited && agentStatus === 'running'
   const isWaitingInput = !isExited && agentStatus === 'waiting-input'
-  const isCompleted = meta.status === 'exited' && meta.exitCode === 0
-
   const handleClose = (e: React.MouseEvent): void => {
     e.stopPropagation()
     requestClose(async () => {
@@ -62,12 +62,16 @@ export function SessionTab({ meta, isActive, isDragOver, onActivate, onContextMe
         onClick={onActivate}
         onDoubleClick={handleDoubleClick}
         onContextMenu={(e) => { e.preventDefault(); onContextMenu?.(e) }}
-        onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; onDragStart?.() }}
+        onDragStart={(e) => {
+          e.dataTransfer.effectAllowed = 'move'
+          startDrag({ type: 'sidebar-session', sessionId: meta.sessionId })
+          onDragStart?.()
+        }}
         onDragOver={onDragOver}
         onDrop={(e) => { e.preventDefault(); onDrop?.() }}
-        onDragEnd={onDragEnd}
+        onDragEnd={() => { endDrag(); onDragEnd?.() }}
         className={cn(
-          'flex items-center gap-1.5 h-full px-4 text-sm font-medium cursor-pointer border-b-2 transition-colors select-none flex-shrink-0 min-w-0 w-[160px]',
+          'flex items-center gap-1.5 h-full px-3 text-sm font-medium cursor-pointer border-b-2 transition-colors select-none flex-shrink-0 min-w-[120px] max-w-[200px]',
           isActive
             ? 'text-zinc-100 bg-brand-panel/20'
             : isWaitingInput
@@ -87,30 +91,27 @@ export function SessionTab({ meta, isActive, isDragOver, onActivate, onContextMe
           WebkitAppRegion: 'no-drag'
         } as React.CSSProperties}
       >
-        {isWorking ? (
-          <Loader2 size={10} className="flex-shrink-0 animate-spin" style={{ color }} />
-        ) : isWaitingInput ? (
-          <span className="flex-shrink-0 text-[11px] leading-none" title="Waiting for input">💬</span>
-        ) : isCompleted ? (
-          <span className="flex-shrink-0 text-[11px] leading-none" title="Completed">✅</span>
-        ) : (
-          <span
-            className="w-2 h-2 rounded-full flex-shrink-0"
-            style={{ backgroundColor: isExited ? '#71717a' : color }}
-          />
-        )}
+        {/* Identity — always left */}
+        <span
+          className="w-2 h-2 rounded-full flex-shrink-0"
+          style={{ backgroundColor: isExited ? '#71717a' : color }}
+        />
         {meta.sandboxed && (
           <span title="Running in Docker sandbox"><ShieldCheck size={10} className="flex-shrink-0 text-emerald-500" /></span>
         )}
 
-        <div className="flex flex-col min-w-0 flex-1 overflow-hidden">
-          <span className="truncate text-sm leading-snug">{meta.name}</span>
-          {meta.cwd && (
-            <span className="truncate text-[10px] text-zinc-600 leading-tight">
-              {meta.cwd.replace(/\\/g, '/').split('/').filter(Boolean).at(-1) ?? meta.cwd}
-            </span>
-          )}
-        </div>
+        <span className="truncate text-sm leading-snug min-w-0 flex-1">{meta.name}</span>
+
+        {/* Activity — right, only when active */}
+        {isWorking && (
+          <span className="relative flex h-2 w-2 flex-shrink-0">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-60" style={{ backgroundColor: color }} />
+            <span className="relative inline-flex h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
+          </span>
+        )}
+        {isWaitingInput && (
+          <span className="w-2 h-2 rounded-full flex-shrink-0 bg-amber-400/80 animate-pulse" title="Waiting for input" />
+        )}
 
         <button
           onClick={handleClose}

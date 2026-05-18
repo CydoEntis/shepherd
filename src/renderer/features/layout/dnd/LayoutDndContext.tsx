@@ -1,12 +1,14 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react'
+import type { EditorTab } from '../layout-tree'
 
-export type DropSide = 'top' | 'bottom' | 'left' | 'right'
+export type DropSide = 'top' | 'bottom' | 'left' | 'right' | 'center'
 
 export type DragState =
   | { type: 'layout-leaf'; leafId: string; tabId: string }
   | { type: 'sidebar-session'; sessionId: string }
   | { type: 'sidebar-notes'; noteId: string }
   | { type: 'file-path'; filePath: string }
+  | { type: 'editor-tab'; sourceTabId: string; sourceLeafId: string; tabIndex: number; tab: EditorTab }
 
 export interface DropTarget {
   leafId: string

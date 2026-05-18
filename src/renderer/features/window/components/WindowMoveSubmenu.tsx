@@ -41,7 +41,7 @@ export function WindowMoveSubmenu({ style, windows, onSelect, onMouseEnter, onMo
 
   return (
     <div
-      className="fixed z-[10000] bg-brand-surface border border-brand-panel/60 rounded shadow-xl py-1 min-w-[140px]"
+      className="fixed z-[10000] bg-brand-panel border border-white/10 rounded shadow-2xl shadow-black/60 py-1 min-w-[140px]"
       style={style}
       onMouseEnter={onMouseEnter}
       onMouseLeave={() => { clearHighlight(); onMouseLeave() }}
@@ -57,7 +57,7 @@ export function WindowMoveSubmenu({ style, windows, onSelect, onMouseEnter, onMo
           <ExternalLink size={11} />New Window
         </button>
       )}
-      {onNewWindow && windows.length > 0 && <div className="my-1 border-t border-brand-panel/60" />}
+      {onNewWindow && windows.length > 0 && <div className="my-1 border-t border-white/10" />}
       {windows.map((w) => (
         <button
           key={w.windowId}

@@ -36,12 +36,12 @@ export function useConfirmClose(): {
           className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60"
           onMouseDown={(e) => { if (e.target === e.currentTarget) handleCancel() }}
         >
-          <div className="bg-brand-surface border border-brand-panel/60 rounded-lg shadow-2xl p-4 w-64 flex flex-col gap-4">
-            <div>
+          <div className="bg-brand-surface border border-white/10 rounded-lg shadow-2xl shadow-black/70 w-64 flex flex-col overflow-hidden">
+            <div className="px-4 py-3 border-b border-white/8">
               <p className="text-sm font-semibold text-zinc-200">Close session?</p>
               <p className="text-xs text-zinc-500 mt-1">The session will be terminated.</p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 px-4 py-3">
               <Checkbox
                 id="dont-ask"
                 checked={dontAsk}
@@ -49,10 +49,10 @@ export function useConfirmClose(): {
               />
               <Label htmlFor="dont-ask" className="text-xs text-zinc-500 cursor-pointer">Don't ask again</Label>
             </div>
-            <div className="flex gap-2 justify-end">
+            <div className="flex gap-2 justify-end px-4 py-3 border-t border-white/8">
               <button
                 onClick={handleCancel}
-                className="px-3 py-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors rounded hover:bg-brand-panel"
+                className="px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors rounded"
               >
                 Cancel
               </button>

@@ -14,7 +14,7 @@ const SelectTrigger = React.forwardRef<
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      'flex h-9 w-full items-center justify-between rounded border border-brand-panel bg-brand-surface px-3 py-2 text-sm text-zinc-200 outline-none transition-colors hover:border-zinc-600 focus:border-brand-accent data-[placeholder]:text-zinc-500 disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1',
+      'flex h-9 w-full items-center justify-between rounded-lg border border-brand-panel/60 bg-brand-surface px-3 py-2 text-sm text-zinc-200 outline-none transition-colors hover:border-brand-panel focus:border-brand-accent/60 data-[placeholder]:text-zinc-500 disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1',
       className
     )}
     {...props}
@@ -63,7 +63,7 @@ const SelectContent = React.forwardRef<
     <SelectPrimitive.Content
       ref={ref}
       className={cn(
-        'relative z-[10000] min-w-[8rem] overflow-hidden rounded border border-brand-panel bg-brand-surface shadow-xl data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
+        'relative z-[10000] max-h-[var(--radix-select-content-available-height)] min-w-[8rem] overflow-hidden rounded-xl border border-brand-panel bg-brand-surface shadow-xl data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
         position === 'popper' &&
           'data-[side=bottom]:translate-y-1 data-[side=top]:-translate-y-1 w-[var(--radix-select-trigger-width)]',
         className
@@ -72,7 +72,12 @@ const SelectContent = React.forwardRef<
       {...props}
     >
       <SelectScrollUpButton />
-      <SelectPrimitive.Viewport className="p-1">
+      <SelectPrimitive.Viewport
+        className={cn(
+          'p-1',
+          position === 'popper' && 'h-[var(--radix-select-viewport-height)] w-full min-w-[var(--radix-select-trigger-width)]'
+        )}
+      >
         {children}
       </SelectPrimitive.Viewport>
       <SelectScrollDownButton />

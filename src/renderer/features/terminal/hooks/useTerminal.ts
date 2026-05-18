@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { toast } from 'sonner'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { CanvasAddon } from '@xterm/addon-canvas'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
+import { WebLinksAddon } from '@xterm/addon-web-links'
 import { ipc } from '../../../lib/ipc'
 import { IPC } from '@shared/ipc-channels'
 import { replayRequest, writeToSession, resizeSession } from '../../session/session.service'
@@ -53,7 +53,7 @@ export interface TerminalCtxMenu {
 }
 
 const DARK_TERMINAL_THEME = {
-  background: '#0f1117', foreground: '#fafafa', cursor: '#fafafa',
+  background: '#131720', foreground: '#fafafa', cursor: '#fafafa',
   black: '#18181b', brightBlack: '#3f3f46',
   red: '#ef4444', brightRed: '#f87171',
   green: '#22c55e', brightGreen: '#4ade80',
@@ -65,7 +65,7 @@ const DARK_TERMINAL_THEME = {
 }
 
 const LIGHT_TERMINAL_THEME = {
-  background: '#f5f2e8', foreground: '#1c1c1c', cursor: '#4a4a4a',
+  background: '#faf6ee', foreground: '#1c1c1c', cursor: '#4a4a4a',
   black: '#000000', brightBlack: '#767676',
   red: '#cd3131', brightRed: '#f14c4c',
   green: '#117700', brightGreen: '#23d18b',
@@ -77,8 +77,8 @@ const LIGHT_TERMINAL_THEME = {
 }
 
 const SPACE_TERMINAL_THEME = {
-  background: '#090616', foreground: '#e8e0ff', cursor: '#bf8cff',
-  black: '#0d0a26', brightBlack: '#2a2050',
+  background: '#0f0b24', foreground: '#e8e0ff', cursor: '#bf8cff',
+  black: '#0f0b24', brightBlack: '#2a2050',
   red: '#ff6b8a', brightRed: '#ff9aad',
   green: '#78ffd6', brightGreen: '#a0ffe6',
   yellow: '#ffd166', brightYellow: '#ffe299',
@@ -149,7 +149,7 @@ const MONOKAI_TERMINAL_THEME = {
 }
 
 const NEBULA_TERMINAL_THEME = {
-  background: '#080514', foreground: '#c8f0ff', cursor: '#64dcff',
+  background: '#0c0920', foreground: '#c8f0ff', cursor: '#64dcff',
   black: '#0c0920', brightBlack: '#1a1240',
   red: '#ff6b8a', brightRed: '#ff9aad',
   green: '#64ffda', brightGreen: '#96ffe8',
@@ -161,8 +161,8 @@ const NEBULA_TERMINAL_THEME = {
 }
 
 const SOLAR_TERMINAL_THEME = {
-  background: '#0c0804', foreground: '#fff0d0', cursor: '#ffb900',
-  black: '#1a1008', brightBlack: '#3d2a10',
+  background: '#120c06', foreground: '#fff0d0', cursor: '#ffb900',
+  black: '#120c06', brightBlack: '#3d2a10',
   red: '#ff6b47', brightRed: '#ff8c6a',
   green: '#a8e063', brightGreen: '#c4f07d',
   yellow: '#ffb900', brightYellow: '#ffd040',
@@ -173,8 +173,8 @@ const SOLAR_TERMINAL_THEME = {
 }
 
 const AURORA_TERMINAL_THEME = {
-  background: '#040c0e', foreground: '#d0fff0', cursor: '#00e6a0',
-  black: '#061a1e', brightBlack: '#0a2830',
+  background: '#061216', foreground: '#d0fff0', cursor: '#00e6a0',
+  black: '#061216', brightBlack: '#0a2830',
   red: '#ff6b8a', brightRed: '#ff9aad',
   green: '#00e6a0', brightGreen: '#40ffc0',
   yellow: '#ffe566', brightYellow: '#fff0a0',
@@ -185,8 +185,8 @@ const AURORA_TERMINAL_THEME = {
 }
 
 const MARS_TERMINAL_THEME = {
-  background: '#100804', foreground: '#ffe8d0', cursor: '#ff6929',
-  black: '#1a0c06', brightBlack: '#3d1c0e',
+  background: '#1a0c07', foreground: '#ffe8d0', cursor: '#ff6929',
+  black: '#1a0c07', brightBlack: '#3d1c0e',
   red: '#ff4a2a', brightRed: '#ff7055',
   green: '#a8d080', brightGreen: '#c8f080',
   yellow: '#ffb040', brightYellow: '#ffd060',
@@ -197,8 +197,8 @@ const MARS_TERMINAL_THEME = {
 }
 
 const PULSAR_TERMINAL_THEME = {
-  background: '#04080e', foreground: '#c8f0ff', cursor: '#00d7ff',
-  black: '#060e1c', brightBlack: '#0e1e3a',
+  background: '#060e20', foreground: '#c8f0ff', cursor: '#00d7ff',
+  black: '#060e20', brightBlack: '#0e1e3a',
   red: '#ff6b8a', brightRed: '#ff9aad',
   green: '#60ffb8', brightGreen: '#90ffd0',
   yellow: '#ffe066', brightYellow: '#fff090',
@@ -224,15 +224,46 @@ export const TERMINAL_THEME_LIST: { id: string; label: string }[] = [
   { id: 'monokai', label: 'Monokai' },
 ]
 
+const COSMOS_TERMINAL_THEME = {
+  background: '#100214', foreground: '#d8beff', cursor: '#be8cf0',
+  black: '#100214', brightBlack: '#2a0636',
+  red: '#ff6b8a', brightRed: '#ff9aad',
+  green: '#78ffd6', brightGreen: '#a0ffe6',
+  yellow: '#ffd166', brightYellow: '#ffe299',
+  blue: '#c0aaff', brightBlue: '#d8c8ff',
+  magenta: '#c89bff', brightMagenta: '#ddc0ff',
+  cyan: '#e088ff', brightCyan: '#eeb0ff',
+  white: '#d8c0f0', brightWhite: '#f0e4ff',
+}
+
+const VOID_TERMINAL_THEME = {
+  background: '#0e0e0e', foreground: '#d0d0d0', cursor: '#c0c0c0',
+  black: '#0e0e0e', brightBlack: '#3a3a3a',
+  red: '#cc4444', brightRed: '#ee6666',
+  green: '#44aa44', brightGreen: '#66cc66',
+  yellow: '#aaaa44', brightYellow: '#cccc66',
+  blue: '#4466cc', brightBlue: '#6688ee',
+  magenta: '#aa44aa', brightMagenta: '#cc66cc',
+  cyan: '#44aaaa', brightCyan: '#66cccc',
+  white: '#d0d0d0', brightWhite: '#f0f0f0',
+}
+
 function resolveTerminalTheme(appTheme: string): typeof DARK_TERMINAL_THEME {
-  if (appTheme === 'space')  return SPACE_TERMINAL_THEME
-  if (appTheme === 'nebula') return NEBULA_TERMINAL_THEME
-  if (appTheme === 'solar')  return SOLAR_TERMINAL_THEME
-  if (appTheme === 'aurora') return AURORA_TERMINAL_THEME
-  if (appTheme === 'mars')   return MARS_TERMINAL_THEME
-  if (appTheme === 'pulsar') return PULSAR_TERMINAL_THEME
-  const isDark = appTheme === 'dark' || (appTheme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
-  return isDark ? DARK_TERMINAL_THEME : LIGHT_TERMINAL_THEME
+  switch (appTheme) {
+    case 'space':  return SPACE_TERMINAL_THEME
+    case 'nebula': return NEBULA_TERMINAL_THEME
+    case 'solar':  return SOLAR_TERMINAL_THEME
+    case 'aurora': return AURORA_TERMINAL_THEME
+    case 'mars':   return MARS_TERMINAL_THEME
+    case 'pulsar': return PULSAR_TERMINAL_THEME
+    case 'cosmos': return COSMOS_TERMINAL_THEME
+    case 'void':   return VOID_TERMINAL_THEME
+    case 'light':  return LIGHT_TERMINAL_THEME
+    default: {
+      const isDark = appTheme === 'dark' || (appTheme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+      return isDark ? DARK_TERMINAL_THEME : LIGHT_TERMINAL_THEME
+    }
+  }
 }
 
 function getThemeById(id: string, appTheme: string): typeof DARK_TERMINAL_THEME {
@@ -342,21 +373,32 @@ export function useTerminal(sessionId: string, containerRef: React.RefObject<HTM
       const unicode11 = new Unicode11Addon()
       terminal.loadAddon(unicode11)
       terminal.unicode.activeVersion = '11'
+      const webLinksAddon = new WebLinksAddon((_, uri) => {
+        void openExternal(uri)
+      })
+      terminal.loadAddon(webLinksAddon)
       const oscDisposables: { dispose(): void }[] = []
 
-      // OSC 777;notify;Title;Message — scripts and agents can push toast notifications
-      // directly from the terminal without going through IPC. Handled here (renderer)
-      // because it's display-only and avoids an extra round-trip through the main process.
+      // OSC 7;file://hostname/path — emitted by shell integration on directory change.
+      // Updates the session's cwd in the store so the file tree can follow the shell.
       oscDisposables.push(
-        terminal.parser.registerOscHandler(777, (data) => {
-          const semi = data.indexOf(';')
-          if (data.slice(0, semi) !== 'notify') return true
-          const rest = data.slice(semi + 1)
-          const semi2 = rest.indexOf(';')
-          const title = semi2 === -1 ? rest : rest.slice(0, semi2)
-          const message = semi2 === -1 ? '' : rest.slice(semi2 + 1)
-          const sessionName = useStore.getState().sessions[sessionId]?.name
-          toast(title || sessionName || 'Terminal', { description: message || undefined })
+        terminal.parser.registerOscHandler(7, (data) => {
+          try {
+            const url = new URL(data)
+            let path = decodeURIComponent(url.pathname).replace(/\\/g, '/')
+            // Windows: /C:/foo → C:/foo
+            if (/^\/[A-Za-z]:\//.test(path)) path = path.slice(1)
+            if (path) useStore.getState().updateSessionCwd(sessionId, path)
+          } catch {}
+          return true
+        })
+      )
+
+      // TODO: OSC 777 toast notifications disabled — needs more investigation before re-enabling.
+      // OSC 777;notify;Title;Message lets scripts push toasts from the terminal, but
+      // the broader notification system needs a reliability review first.
+      oscDisposables.push(
+        terminal.parser.registerOscHandler(777, (_data) => {
           return true
         })
       )
@@ -398,7 +440,7 @@ export function useTerminal(sessionId: string, containerRef: React.RefObject<HTM
       // Force a full canvas repaint after DOM re-parent — the WebGL/canvas renderer can
       // lose its drawing state when the element moves to a new container.
       if (existing) try { terminal.refresh(0, terminal.rows - 1) } catch {}
-      terminal.focus()
+      try { terminal.focus() } catch {}
 
       const { cols, rows } = terminal
       registerTerminal(sessionId, cols, rows)
@@ -532,7 +574,7 @@ export function useTerminal(sessionId: string, containerRef: React.RefObject<HTM
       const x = e.clientX
       const y = e.clientY
 
-      navigator.clipboard.readText().catch(() => '').then((clipText) => {
+      readClipboard().catch(() => '').then((clipText) => {
         const items: TerminalCtxItem[] = []
 
         if (sel) {
@@ -547,6 +589,8 @@ export function useTerminal(sessionId: string, containerRef: React.RefObject<HTM
         if (clipText) {
           items.push({ label: 'Paste', action: () => { terminal.paste(clipText); requestAnimationFrame(() => terminal.focus()) } })
         }
+
+        items.push({ label: 'Clear', action: () => { terminal.clear(); terminal.focus() } })
 
         setCtxMenu({ x, y, items })
       })
@@ -572,6 +616,7 @@ export function useTerminal(sessionId: string, containerRef: React.RefObject<HTM
     // When cols change, xterm reflows cursor-positioned TUI output (Claude Code welcome screen)
     // producing duplicate lines. Clearing the viewport lets the app redraw clean via SIGWINCH.
     const safeRefit = (): void => {
+      if (disposed) return
       const t = terminalRef.current
       if (!t) return
       const prevCols = t.cols
@@ -630,10 +675,14 @@ export function useTerminal(sessionId: string, containerRef: React.RefObject<HTM
       if (!useStore.getState().sessions[sessionId]) {
         const poolEntry = terminalPool.get(sessionId)
         terminalPool.delete(sessionId)
-        poolEntry?.rendererAddon?.dispose()
-        poolEntry?.oscDisposables.forEach((d) => d.dispose())
-        searchAddon.dispose()
-        terminal.dispose()
+        terminalRef.current = null
+        fitAddonRef.current = null
+        // terminal.dispose() automatically disposes all addons registered via loadAddon
+        // (renderer, fit, search, unicode). Manually disposing them first causes a
+        // second dispose() call inside terminal.dispose() which crashes with _isDisposed.
+        try { terminal.dispose() } catch {}
+        // OSC handlers are registered on the parser directly, dispose them after.
+        poolEntry?.oscDisposables.forEach((d) => { try { d.dispose() } catch {} })
         unregisterTerminal(sessionId)
       }
     }
@@ -655,21 +704,23 @@ export function useTerminal(sessionId: string, containerRef: React.RefObject<HTM
   // Update font settings when they change (without remounting)
   useEffect(() => {
     if (terminalRef.current) {
-      terminalRef.current.options.fontSize = settings.fontSize
-      terminalRef.current.options.fontFamily = settings.fontFamily
       try {
+        terminalRef.current.options.fontSize = settings.fontSize
+        terminalRef.current.options.fontFamily = settings.fontFamily
         fitAddonRef.current?.fit()
         terminalRef.current.refresh(0, terminalRef.current.rows - 1)
       } catch {}
     }
   }, [settings.fontSize, settings.fontFamily])
 
-  // Update terminal theme when app theme or per-session override changes
+  // Update terminal theme: per-session override → auto from app theme
   useEffect(() => {
     if (terminalRef.current) {
-      terminalRef.current.options.theme = sessionTerminalTheme
-        ? getThemeById(sessionTerminalTheme, appTheme)
-        : resolveTerminalTheme(appTheme)
+      try {
+        terminalRef.current.options.theme = sessionTerminalTheme
+          ? getThemeById(sessionTerminalTheme, appTheme)
+          : resolveTerminalTheme(appTheme)
+      } catch {}
     }
   }, [appTheme, sessionTerminalTheme])
 

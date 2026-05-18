@@ -79,7 +79,7 @@ export function KeyboardShortcutsModal({ open, onClose }: Props): JSX.Element | 
       title: 'Global',
       rows: [
         { label: 'Command Palette',    binding: hk.commandPalette },
-        { label: 'File Tree',          binding: hk.openFileFinder },
+        { label: 'Project Palette',    binding: hk.projectPalette },
         { label: 'Show Shortcuts',     binding: hk.showShortcuts },
         { label: 'Open Project',       binding: hk.openProject },
       ]
@@ -104,9 +104,8 @@ export function KeyboardShortcutsModal({ open, onClose }: Props): JSX.Element | 
       ]
     },
     {
-      title: 'Notes',
+      title: 'Files',
       rows: [
-        { label: 'Open / close notes', binding: hk.quickNote },
         { label: 'Toggle file tree',   binding: 'Ctrl+Shift+B' },
         { label: 'Split preview',      binding: 'Ctrl+Shift+M' },
       ]

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Bell, Check, X, ChevronRight, Sparkles } from 'lucide-react'
 import { useStore } from '../../../store/root.store'
-import { cn } from '../../../lib/utils'
+import { cn, accentContrastColor } from '../../../lib/utils'
 import type { AppNotification } from '../notifications.store'
 
 function relativeTime(ts: number): string {
@@ -25,6 +25,8 @@ function NotificationItem({ n, onAction, onDismiss }: {
       <div className="mt-0.5 shrink-0">
         {n.type === 'agent-done'
           ? <div className="w-2 h-2 rounded-full bg-emerald-400 mt-1" />
+          : n.type === 'agent-waiting'
+          ? <div className="w-2 h-2 rounded-full bg-amber-400 mt-1" />
           : <Sparkles size={13} className="text-brand-accent" />
         }
       </div>
@@ -59,6 +61,9 @@ export function NotificationBell(): JSX.Element {
   const setActiveSession = useStore((s) => s.setActiveSession)
 
   const unread = notifications.filter((n) => !n.read).length
+  // Re-evaluate when theme changes so CSS var is read fresh
+  useStore((s) => s.settings.theme)
+  const badgeTextColor = accentContrastColor()
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -99,7 +104,7 @@ export function NotificationBell(): JSX.Element {
       >
         <Bell size={15} />
         {unread > 0 && (
-          <span className="absolute top-0.5 right-1 min-w-[14px] h-[14px] px-0.5 flex items-center justify-center rounded-full bg-brand-accent text-[9px] font-bold text-white leading-none">
+          <span className="absolute top-0.5 right-1 min-w-[14px] h-[14px] px-0.5 flex items-center justify-center rounded-full bg-brand-accent text-[9px] font-bold leading-none" style={{ color: badgeTextColor }}>
             {unread > 9 ? '9+' : unread}
           </span>
         )}

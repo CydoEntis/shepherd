@@ -2,7 +2,7 @@ import { useRef, useCallback } from 'react'
 import { cn } from '../../../lib/utils'
 import { useLayoutDnd } from './LayoutDndContext'
 import { useStore } from '../../../store/root.store'
-import { makeNotesLeaf, findNotesLeafIdForNote, makeFileEditorLeaf, findLeafById, collectFileEditorLeaves } from '../layout-tree'
+import { makeFileEditorLeaf, findLeafById, collectFileEditorLeaves } from '../layout-tree'
 import { normalizePath } from '../../../lib/utils'
 import type { DropSide } from './LayoutDndContext'
 
@@ -10,14 +10,16 @@ interface Props {
   leafId: string
   tabId: string
   children: React.ReactNode
+  acceptsCenter?: boolean
 }
 
-function hitSide(e: React.DragEvent, el: HTMLElement): DropSide {
+function hitSide(e: React.DragEvent, el: HTMLElement, allowCenter: boolean): DropSide {
   const rect = el.getBoundingClientRect()
   const rx = (e.clientX - rect.left) / rect.width
   const ry = (e.clientY - rect.top) / rect.height
   const dx = Math.min(rx, 1 - rx)
   const dy = Math.min(ry, 1 - ry)
+  if (allowCenter && dx > 0.2 && dy > 0.2) return 'center'
   if (dx < dy) return rx < 0.5 ? 'left' : 'right'
   return ry < 0.5 ? 'top' : 'bottom'
 }
@@ -27,9 +29,10 @@ const ZONE_CLASS: Record<DropSide, string> = {
   right:  'top-1 bottom-1 right-1 w-[45%]',
   top:    'top-1 left-1 right-1 h-[45%]',
   bottom: 'bottom-1 left-1 right-1 h-[45%]',
+  center: 'inset-2',
 }
 
-export function PaneDropTarget({ leafId, tabId, children }: Props): JSX.Element {
+export function PaneDropTarget({ leafId, tabId, children, acceptsCenter }: Props): JSX.Element {
   const paneRef = useRef<HTMLDivElement>(null)
 
   const { dragState, activeDropTarget, endDrag, setActiveDropTarget } = useLayoutDnd()
@@ -40,21 +43,52 @@ export function PaneDropTarget({ leafId, tabId, children }: Props): JSX.Element 
   const removeLayoutLeaf = useStore((s) => s.removeLayoutLeaf)
   const addOpenFile = useStore((s) => s.addOpenFile)
   const setFocusedLeaf = useStore((s) => s.setFocusedLeaf)
+  const addFileToEditorGroup = useStore((s) => s.addFileToEditorGroup)
   const paneTree = useStore((s) => s.paneTree)
 
+  const moveEditorTab = useStore((s) => s.moveEditorTab)
+
   const isDragging = dragState !== null
-  const isSource = dragState?.type === 'layout-leaf' && dragState.leafId === leafId
+  // isSource controls whether the OVERLAY renders (overlay blocks child events).
+  // editor-tab from same leaf: keep isSource=true so the overlay is suppressed and tab buttons
+  // remain reachable for within-bar reordering (tab button onDragOver stops propagation during
+  // reorder, so handleDragOver below only fires when the cursor leaves the tab bar).
+  const isSource =
+    (dragState?.type === 'layout-leaf' && dragState.leafId === leafId) ||
+    (dragState?.type === 'editor-tab' && dragState.sourceLeafId === leafId)
+  const isSelfEditorTab = dragState?.type === 'editor-tab' && dragState.sourceLeafId === leafId
   const activeZone = activeDropTarget?.leafId === leafId ? activeDropTarget.side : null
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    if (!dragState || isSource || !paneRef.current) return
+    // OS file drags have no internal dragState — let child elements (TerminalPane) handle them
+    if (!dragState) {
+      if (e.dataTransfer.types.includes('Files')) e.preventDefault()
+      return
+    }
+    if (!paneRef.current) return
+
+    // Self editor-tab: support edge-only splits. The tab bar's per-tab onDragOver calls
+    // stopPropagation during within-bar reorder, so this branch only fires when the cursor
+    // has moved into the content area — a genuine intent to split the pane.
+    if (isSelfEditorTab) {
+      const side = hitSide(e, paneRef.current, false) // never center — merge into self is a no-op
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+      if (activeDropTarget?.leafId !== leafId || activeDropTarget.side !== side) {
+        setActiveDropTarget({ leafId, side })
+      }
+      return
+    }
+
+    if (isSource) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
-    const side = hitSide(e, paneRef.current)
+    const allowCenter = !!acceptsCenter && (dragState.type === 'file-path' || dragState.type === 'editor-tab')
+    const side = hitSide(e, paneRef.current, allowCenter)
     if (activeDropTarget?.leafId !== leafId || activeDropTarget.side !== side) {
       setActiveDropTarget({ leafId, side })
     }
-  }, [dragState, isSource, leafId, activeDropTarget, setActiveDropTarget])
+  }, [dragState, isSource, isSelfEditorTab, leafId, activeDropTarget, acceptsCenter, setActiveDropTarget])
 
   const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
     if (!paneRef.current?.contains(e.relatedTarget as Node)) {
@@ -70,6 +104,14 @@ export function PaneDropTarget({ leafId, tabId, children }: Props): JSX.Element 
     const direction = (activeZone === 'left' || activeZone === 'right') ? 'horizontal' : 'vertical'
     const side = (activeZone === 'right' || activeZone === 'bottom') ? 'after' : 'before'
 
+    // Center drop — add file to this editor group
+    if (activeZone === 'center' && dragState.type === 'file-path') {
+      addFileToEditorGroup(tabId, leafId, dragState.filePath)
+      addOpenFile(dragState.filePath)
+      endDrag()
+      return
+    }
+
     if (dragState.type === 'file-path') {
       const filePath = dragState.filePath
 
@@ -84,22 +126,25 @@ export function PaneDropTarget({ leafId, tabId, children }: Props): JSX.Element 
       }
 
       if (existingLeafId && existingTabId) {
-        // File already open — move it to the drop position if there's a valid zone
         if (activeZone && existingLeafId !== leafId) {
           if (existingTabId === tabId) {
+            // Already in this tab — just reposition it
             moveLayout(tabId, existingLeafId, leafId, direction, side)
+            setFocusedLeaf(existingLeafId)
           } else {
-            const srcTree = paneTree[existingTabId]
-            if (srcTree) {
-              const srcLeaf = findLeafById(srcTree, existingLeafId)
-              if (srcLeaf) {
-                insertLayout(tabId, leafId, direction, srcLeaf, side)
-                removeLayoutLeaf(existingTabId, existingLeafId)
-              }
+            // In a different tab (e.g. file tab) — open a new independent copy here
+            const newLeaf = makeFileEditorLeaf(normalizePath(filePath))
+            const currentTree = paneTree[tabId]
+            if (currentTree?.type === 'leaf' && currentTree.panel === 'home' && currentTree.id === leafId) {
+              replaceLayoutLeaf(tabId, leafId, newLeaf)
+            } else {
+              insertLayout(tabId, leafId, direction, newLeaf, side)
             }
+            setFocusedLeaf(newLeaf.id)
           }
+        } else {
+          setFocusedLeaf(existingLeafId)
         }
-        setFocusedLeaf(existingLeafId)
         endDrag()
         return
       }
@@ -132,14 +177,13 @@ export function PaneDropTarget({ leafId, tabId, children }: Props): JSX.Element 
       }
     } else if (dragState.type === 'sidebar-session') {
       insertSessionIntoLayout(tabId, leafId, dragState.sessionId, direction, side)
-    } else if (dragState.type === 'sidebar-notes') {
-      const existingLeafId = dragState.noteId && tree ? findNotesLeafIdForNote(tree, dragState.noteId) : null
-      if (existingLeafId) moveLayout(tabId, existingLeafId, leafId, direction, side)
-      else insertLayout(tabId, leafId, direction, makeNotesLeaf(dragState.noteId), side)
+    } else if (dragState.type === 'editor-tab') {
+      const edge = activeZone === 'center' ? null : activeZone
+      moveEditorTab(dragState.sourceTabId, dragState.sourceLeafId, dragState.tabIndex, tabId, leafId, edge)
     }
 
     endDrag()
-  }, [dragState, activeZone, tabId, leafId, moveLayout, insertSessionIntoLayout, insertLayout, replaceLayoutLeaf, addOpenFile, setFocusedLeaf, paneTree, endDrag])
+  }, [dragState, activeZone, tabId, leafId, moveLayout, insertSessionIntoLayout, insertLayout, replaceLayoutLeaf, addOpenFile, addFileToEditorGroup, setFocusedLeaf, moveEditorTab, paneTree, endDrag])
 
   return (
     <div
@@ -151,13 +195,14 @@ export function PaneDropTarget({ leafId, tabId, children }: Props): JSX.Element 
     >
       {children}
 
-      {/* Transparent overlay — blocks terminal canvas from eating drag events */}
+      {/* Transparent overlay — blocks terminal canvas from eating drag events on target panes.
+          Not rendered for source pane (isSource=true) so tab buttons remain reachable. */}
       {isDragging && !isSource && (
         <div className="absolute inset-0 z-20" />
       )}
 
-      {/* Drop preview highlight */}
-      {isDragging && !isSource && activeZone && (
+      {/* Drop preview highlight — also shown for self editor-tab edge drops (splits) */}
+      {isDragging && activeZone && (!isSource || isSelfEditorTab) && (
         <div
           className={cn(
             'absolute z-30 pointer-events-none rounded',

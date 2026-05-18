@@ -19,6 +19,7 @@
   },
   "include": [
     "src/renderer/**/*",
+    "src/renderer/assets/**/*.json",
     "src/shared/**/*"
   ]
 }

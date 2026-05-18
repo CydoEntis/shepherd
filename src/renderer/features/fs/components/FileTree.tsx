@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { ChevronRight, ChevronDown, File, Folder, FolderOpen } from 'lucide-react'
+import { ChevronRight, ChevronDown, File, FileCode, FileJson, FileText, FileImage, Folder, FolderOpen } from 'lucide-react'
 import { createPortal } from 'react-dom'
-import { readDir, getGitStatus, renameEntry, trashEntry, writeFile, mkdir } from '../fs.service'
+import { readDir, getGitStatus, renameEntry, trashEntry, writeFile, mkdir, findFiles, copyPath } from '../fs.service'
 import { FileTreeContextMenu } from './FileTreeContextMenu'
 import { useInstalledEditors } from '../hooks/useInstalledEditors'
 import { useLayoutDnd } from '../../layout/dnd/LayoutDndContext'
@@ -27,6 +27,65 @@ function statusLabel(xy: string): string {
 
 function norm(p: string): string {
   return p.replace(/\\/g, '/')
+}
+
+const EXT_COLOR: Record<string, string> = {
+  ts: 'text-blue-400', tsx: 'text-blue-400',
+  js: 'text-yellow-400', jsx: 'text-yellow-400', mjs: 'text-yellow-400', cjs: 'text-yellow-400',
+  py: 'text-green-400', pyi: 'text-green-400',
+  rs: 'text-orange-400',
+  go: 'text-cyan-400',
+  rb: 'text-red-400', php: 'text-violet-400',
+  java: 'text-orange-300', kt: 'text-violet-300', swift: 'text-orange-300',
+  cpp: 'text-blue-300', c: 'text-blue-300', h: 'text-blue-300', cs: 'text-blue-300',
+  css: 'text-violet-400', scss: 'text-violet-400', sass: 'text-violet-400', less: 'text-violet-400',
+  html: 'text-orange-400', htm: 'text-orange-400', vue: 'text-green-400', svelte: 'text-orange-400',
+  json: 'text-yellow-300', jsonc: 'text-yellow-300',
+  yaml: 'text-yellow-300', yml: 'text-yellow-300', toml: 'text-yellow-300',
+  md: 'text-blue-300', mdx: 'text-blue-300', txt: 'text-zinc-400', rst: 'text-zinc-400',
+  png: 'text-pink-400', jpg: 'text-pink-400', jpeg: 'text-pink-400', gif: 'text-pink-400',
+  svg: 'text-pink-400', ico: 'text-pink-400', webp: 'text-pink-400', bmp: 'text-pink-400',
+  sh: 'text-green-300', bash: 'text-green-300', zsh: 'text-green-300', fish: 'text-green-300', ps1: 'text-blue-300',
+  env: 'text-zinc-400', lock: 'text-zinc-500', nsh: 'text-zinc-400', sql: 'text-sky-400',
+}
+
+const NAME_COLOR: Record<string, string> = {
+  'package.json': 'text-yellow-400', 'package-lock.json': 'text-zinc-500',
+  'tsconfig.json': 'text-blue-300', 'jsconfig.json': 'text-yellow-300',
+  '.gitignore': 'text-orange-300', '.gitattributes': 'text-orange-300',
+  '.env': 'text-zinc-400', '.env.local': 'text-zinc-400', '.env.example': 'text-zinc-400',
+  'dockerfile': 'text-blue-400', 'docker-compose.yml': 'text-blue-400', 'docker-compose.yaml': 'text-blue-400',
+  'cargo.toml': 'text-orange-400', 'cargo.lock': 'text-zinc-500',
+  'makefile': 'text-red-300', 'readme.md': 'text-blue-300', 'license': 'text-zinc-400',
+}
+
+type FileIconType = 'code' | 'json' | 'text' | 'image' | 'default'
+
+const CODE_EXTS = new Set(['ts','tsx','js','jsx','mjs','cjs','py','pyi','rs','go','rb','php','java','kt','swift','cpp','c','h','cs','css','scss','sass','less','html','htm','vue','svelte','sh','bash','zsh','fish','ps1','sql'])
+const JSON_EXTS = new Set(['json','jsonc','yaml','yml','toml'])
+const TEXT_EXTS = new Set(['md','mdx','txt','rst'])
+const IMAGE_EXTS = new Set(['png','jpg','jpeg','gif','svg','ico','webp','bmp','tiff'])
+
+function getFileIconMeta(name: string): { type: FileIconType; color: string } {
+  const lower = name.toLowerCase()
+  const color = NAME_COLOR[lower] ?? EXT_COLOR[lower.split('.').pop() ?? ''] ?? 'text-zinc-400'
+  const ext = lower.split('.').pop() ?? ''
+  let type: FileIconType = 'default'
+  if (CODE_EXTS.has(ext)) type = 'code'
+  else if (JSON_EXTS.has(ext)) type = 'json'
+  else if (TEXT_EXTS.has(ext)) type = 'text'
+  else if (IMAGE_EXTS.has(ext)) type = 'image'
+  return { type, color }
+}
+
+export function FileIcon({ name }: { name: string }): JSX.Element {
+  const { type, color } = getFileIconMeta(name)
+  const props = { size: 15, className: color }
+  if (type === 'code') return <FileCode {...props} />
+  if (type === 'json') return <FileJson {...props} />
+  if (type === 'text') return <FileText {...props} />
+  if (type === 'image') return <FileImage {...props} />
+  return <File {...props} />
 }
 
 function expandedKey(root: string): string {
@@ -55,6 +114,45 @@ interface CtxTarget {
   rel: string
 }
 
+interface InlineCreateRowProps {
+  type: 'file' | 'folder'
+  depth: number
+  value: string
+  onChange: (v: string) => void
+  onSubmit: (name: string) => void
+  onCancel: () => void
+}
+
+function InlineCreateRow({ type, depth, value, onChange, onSubmit, onCancel }: InlineCreateRowProps): JSX.Element {
+  const inputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => { setTimeout(() => inputRef.current?.focus(), 0) }, [])
+  return (
+    <div
+      className="w-full flex items-center gap-1.5 py-1 rounded-sm bg-brand-accent/10 ring-1 ring-inset ring-brand-accent/20"
+      style={{ paddingLeft: `${6 + depth * 12}px`, paddingRight: 8 }}
+    >
+      <span className="flex-shrink-0 w-3" />
+      <span className="flex-shrink-0 text-zinc-400 w-4 flex items-center">
+        {type === 'folder' ? <Folder size={15} className="text-yellow-500/70" /> : <FileIcon name="new-file" />}
+      </span>
+      <Input
+        ref={inputRef}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          e.stopPropagation()
+          if (e.key === 'Enter') { const t = value.trim(); if (t) onSubmit(t) }
+          else if (e.key === 'Escape') onCancel()
+        }}
+        onBlur={onCancel}
+        onClick={(e) => e.stopPropagation()}
+        placeholder={type === 'file' ? 'filename.ts' : 'folder-name'}
+        className="flex-1 h-6 px-1 text-xs min-w-0"
+      />
+    </div>
+  )
+}
+
 interface TreeNodeProps {
   entry: FsEntry
   depth: number
@@ -63,6 +161,8 @@ interface TreeNodeProps {
   activeFilePath: string | null
   focusedPath: string | null
   renamingPath: string | null
+  creating: { parentDir: string; type: 'file' | 'folder' } | null
+  creatingValue: string
   expanded: Set<string>
   childrenMap: Map<string, FsEntry[]>
   onFileClick: (path: string, xy: string | undefined) => void
@@ -73,9 +173,16 @@ interface TreeNodeProps {
   onQuickNew: (parentDir: string, type: 'file' | 'folder') => void
   onLoadChildren: (path: string) => void
   onSetFocus: (path: string) => void
+  onCreatingChange: (v: string) => void
+  onCreateSubmit: (name: string) => void
+  onCreateCancel: () => void
+  extDropDir: string | null
+  onExternalDragOver: (dirPath: string) => void
+  onExternalDrop: (dirPath: string, files: File[]) => void
+  onInternalDrop: (srcPath: string, destDir: string) => void
 }
 
-function TreeNode({ entry, depth, gitMap, projectRoot, activeFilePath, focusedPath, renamingPath, expanded, childrenMap, onFileClick, onContextMenu, onRenameSubmit, onRenameCancel, onToggle, onQuickNew, onLoadChildren, onSetFocus }: TreeNodeProps): JSX.Element {
+function TreeNode({ entry, depth, gitMap, projectRoot, activeFilePath, focusedPath, renamingPath, creating, creatingValue, expanded, childrenMap, onFileClick, onContextMenu, onRenameSubmit, onRenameCancel, onToggle, onQuickNew, onLoadChildren, onSetFocus, onCreatingChange, onCreateSubmit, onCreateCancel, extDropDir, onExternalDragOver, onExternalDrop, onInternalDrop }: TreeNodeProps): JSX.Element {
   const [renameValue, setRenameValue] = useState(entry.name)
   const inputRef = useRef<HTMLInputElement>(null)
   const { startDrag, endDrag } = useLayoutDnd()
@@ -124,7 +231,7 @@ function TreeNode({ entry, depth, gitMap, projectRoot, activeFilePath, focusedPa
   const isActive = !entry.isDirectory && activeFilePath !== null &&
     norm(entry.path) === norm(activeFilePath)
 
-  const childProps = { gitMap, projectRoot, activeFilePath, focusedPath, renamingPath, expanded, childrenMap, onFileClick, onContextMenu, onRenameSubmit, onRenameCancel, onToggle, onQuickNew, onLoadChildren, onSetFocus }
+  const childProps = { gitMap, projectRoot, activeFilePath, focusedPath, renamingPath, creating, creatingValue, expanded, childrenMap, onFileClick, onContextMenu, onRenameSubmit, onRenameCancel, onToggle, onQuickNew, onLoadChildren, onSetFocus, onCreatingChange, onCreateSubmit, onCreateCancel, extDropDir, onExternalDragOver, onExternalDrop, onInternalDrop }
 
   return (
     <>
@@ -139,23 +246,42 @@ function TreeNode({ entry, depth, gitMap, projectRoot, activeFilePath, focusedPa
           document.dispatchEvent(new CustomEvent('acc:file-drag-start'))
         } : undefined}
         onDragEnd={!entry.isDirectory ? () => endDrag() : undefined}
+        onDragOver={entry.isDirectory ? (e) => {
+          const hasOrbitFile = e.dataTransfer.types.includes('application/orbit-file')
+          const hasOsFiles = e.dataTransfer.types.includes('Files')
+          if (!hasOrbitFile && !hasOsFiles) return
+          e.preventDefault(); e.stopPropagation()
+          onExternalDragOver(norm(entry.path))
+        } : undefined}
+        onDrop={entry.isDirectory ? (e) => {
+          e.preventDefault(); e.stopPropagation()
+          const orbitSrc = e.dataTransfer.getData('application/orbit-file')
+          if (orbitSrc) {
+            onInternalDrop(orbitSrc, norm(entry.path))
+            return
+          }
+          if (!e.dataTransfer.types.includes('Files')) return
+          onExternalDrop(norm(entry.path), Array.from(e.dataTransfer.files))
+        } : undefined}
         className={cn(
-          'w-full flex items-center gap-1.5 py-1 text-left transition-colors rounded-sm group',
-          isFocused
-            ? 'bg-brand-accent/15 ring-1 ring-inset ring-brand-accent/30'
-            : isActive ? 'bg-brand-panel/60' : 'hover:bg-brand-panel/40'
+          'w-full flex items-center gap-1.5 py-1.5 text-left transition-colors rounded-sm group',
+          extDropDir === norm(entry.path)
+            ? 'bg-brand-accent/20 ring-1 ring-inset ring-brand-accent/50'
+            : isFocused
+              ? 'bg-brand-accent/15 ring-1 ring-inset ring-brand-accent/30'
+              : isActive ? 'bg-brand-panel/60' : 'hover:bg-brand-panel/40'
         )}
         style={{ paddingLeft: `${6 + depth * 12}px`, paddingRight: 8 }}
-        onContextMenu={(e) => { e.preventDefault(); onContextMenu(e, entry, rel) }}
+        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onContextMenu(e, entry, rel) }}
       >
         <button onClick={toggle} className="flex items-center gap-1 flex-1 min-w-0 text-left">
           {entry.isDirectory
-            ? <span className="flex-shrink-0 text-zinc-500 w-3">{isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}</span>
-            : <span className="flex-shrink-0 w-3" />}
-          <span className="flex-shrink-0 text-zinc-400 w-3.5 flex items-center">
+            ? <span className="flex-shrink-0 text-zinc-500 w-3.5">{isExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</span>
+            : <span className="flex-shrink-0 w-3.5" />}
+          <span className="flex-shrink-0 w-4 flex items-center">
             {entry.isDirectory
-              ? isExpanded ? <FolderOpen size={13} className="text-yellow-500/70" /> : <Folder size={13} className="text-yellow-500/70" />
-              : <File size={13} />}
+              ? isExpanded ? <FolderOpen size={15} className="text-yellow-500/70" /> : <Folder size={15} className="text-yellow-500/70" />
+              : <FileIcon name={entry.name} />}
           </span>
           {isRenaming ? (
             <Input
@@ -168,7 +294,7 @@ function TreeNode({ entry, depth, gitMap, projectRoot, activeFilePath, focusedPa
               className="flex-1 h-6 px-1 text-xs min-w-0"
             />
           ) : (
-            <span className={cn('text-xs truncate flex-1', xy ? statusColor(xy) : 'text-zinc-300')}>
+            <span className={cn('text-sm truncate flex-1', xy ? statusColor(xy) : 'text-zinc-300')}>
               {entry.name}
             </span>
           )}
@@ -179,9 +305,23 @@ function TreeNode({ entry, depth, gitMap, projectRoot, activeFilePath, focusedPa
           </span>
         )}
       </div>
-      {isExpanded && children && children.map((child) => (
-        <TreeNode key={child.path} entry={child} depth={depth + 1} {...childProps} />
-      ))}
+      {isExpanded && (
+        <>
+          {creating?.parentDir === norm(entry.path) && (
+            <InlineCreateRow
+              type={creating.type}
+              depth={depth + 1}
+              value={creatingValue}
+              onChange={onCreatingChange}
+              onSubmit={onCreateSubmit}
+              onCancel={onCreateCancel}
+            />
+          )}
+          {children && children.map((child) => (
+            <TreeNode key={child.path} entry={child} depth={depth + 1} {...childProps} />
+          ))}
+        </>
+      )}
     </>
   )
 }
@@ -218,64 +358,17 @@ function DeleteConfirm({ entry, onConfirm, onCancel }: { entry: FsEntry; onConfi
   )
 }
 
-function CreateItemDialog({ parentDir, type, onConfirm, onCancel }: {
-  parentDir: string
-  type: 'file' | 'folder'
-  onConfirm: (name: string) => void
-  onCancel: () => void
-}): JSX.Element {
-  const [value, setValue] = useState('')
-  const inputRef = useRef<HTMLInputElement>(null)
-  useEffect(() => { setTimeout(() => inputRef.current?.focus(), 0) }, [])
-  const submit = (): void => { const name = value.trim(); if (name) onConfirm(name) }
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center"
-      onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel() }}
-    >
-      <div className="absolute inset-0 bg-black/50" />
-      <div className="relative bg-brand-surface border border-brand-panel/60 rounded-lg shadow-2xl w-72 p-5 flex flex-col gap-4">
-        <span className="text-sm font-semibold text-zinc-200">
-          {type === 'file' ? 'New File' : 'New Folder'}
-        </span>
-        <p className="text-[10px] text-zinc-600 -mt-2 truncate">{parentDir}</p>
-        <input
-          ref={inputRef}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') submit(); else if (e.key === 'Escape') onCancel() }}
-          placeholder={type === 'file' ? 'filename.ts' : 'folder-name'}
-          className="w-full px-3 py-1.5 text-xs bg-brand-bg border border-brand-panel/60 rounded text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-brand-accent/50"
-        />
-        <div className="flex gap-2 justify-end">
-          <button
-            onClick={onCancel}
-            className="px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition-colors rounded border border-brand-panel hover:border-zinc-600"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={submit}
-            disabled={!value.trim()}
-            className="px-3 py-1.5 text-xs bg-brand-accent/20 text-brand-accent border border-brand-accent/30 hover:bg-brand-accent/30 transition-colors rounded disabled:opacity-40"
-          >
-            Create
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body
-  )
-}
 
 interface Props {
   projectRoot: string
   activeFilePath?: string | null
   onFileClick: (path: string, xy: string | undefined) => void
   refreshTick?: number
+  filterText?: string
+  onMoveToWindow?: (filePath: string, targetWindowId: string | null) => void
 }
 
-export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileClick, refreshTick = 0 }: Props): JSX.Element {
+export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileClick, refreshTick = 0, filterText = '', onMoveToWindow }: Props): JSX.Element {
   const [rootEntries, setRootEntries] = useState<FsEntry[]>([])
   const [childrenMap, setChildrenMap] = useState<Map<string, FsEntry[]>>(new Map())
   const [gitMap, setGitMap] = useState<Map<string, string>>(new Map())
@@ -283,10 +376,14 @@ export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileC
   const [renamingPath, setRenamingPath] = useState<string | null>(null)
   const [deletingEntry, setDeletingEntry] = useState<FsEntry | null>(null)
   const [creating, setCreating] = useState<{ parentDir: string; type: 'file' | 'folder' } | null>(null)
+  const [creatingValue, setCreatingValue] = useState('')
+  const [extDropDir, setExtDropDir] = useState<string | null>(null)
   const [focusedPath, _setFocusedPath] = useState<string | null>(null)
   const treeBodyRef = useRef<HTMLDivElement>(null)
   const focusedPathRef = useRef<string | null>(null)
   const editors = useInstalledEditors()
+  const [allFiles, setAllFiles] = useState<string[]>([])
+  const [allFilesLoaded, setAllFilesLoaded] = useState(false)
 
   // Always update ref synchronously so navigate() reads the latest path without waiting for a render
   const setFocusedPath = useCallback((path: string | null) => {
@@ -302,7 +399,18 @@ export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileC
     setExpanded(loadExpanded(projectRoot))
     setChildrenMap(new Map())
     setFocusedPath(null)
+    setAllFiles([])
+    setAllFilesLoaded(false)
   }, [projectRoot])
+
+  // Eagerly index all files once filter mode is first activated
+  useEffect(() => {
+    if (!filterText || allFilesLoaded || !projectRoot) return
+    findFiles(projectRoot).then((files) => {
+      setAllFiles(files)
+      setAllFilesLoaded(true)
+    }).catch(() => {})
+  }, [filterText, allFilesLoaded, projectRoot])
 
   useEffect(() => {
     if (!activeFilePath || !projectRoot) return
@@ -494,6 +602,7 @@ export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileC
     if (!creating) return
     const target = creating
     setCreating(null)
+    setCreatingValue('')
     const fullPath = target.parentDir.replace(/\/$/, '') + '/' + name
     try {
       if (target.type === 'folder') {
@@ -507,17 +616,92 @@ export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileC
   }, [creating, loadRoot, onFileClick])
 
   const handleQuickNew = useCallback((parentDir: string, type: 'file' | 'folder') => {
-    setCreating({ parentDir, type })
-  }, [])
+    const key = norm(parentDir)
+    if (key !== projectRoot) {
+      if (!childrenMap.has(key)) loadChildren(parentDir)
+      if (!expanded.has(key)) {
+        setExpanded(prev => {
+          const next = new Set([...prev, key])
+          saveExpanded(projectRoot, next)
+          return next
+        })
+      }
+    }
+    setCreating({ parentDir: key, type })
+    setCreatingValue('')
+  }, [childrenMap, expanded, projectRoot, loadChildren])
+
+  const handleExternalDrop = useCallback(async (dirPath: string, files: File[]) => {
+    setExtDropDir(null)
+    for (const file of files) {
+      const src = window.electronWebUtils.getPathForFile(file)
+      if (!src) continue
+      const dest = dirPath.replace(/\/$/, '') + '/' + file.name
+      try { await copyPath(src, dest) } catch {}
+    }
+    await loadRoot()
+  }, [loadRoot])
+
+  const handleInternalDrop = useCallback(async (srcPath: string, destDir: string): Promise<void> => {
+    setExtDropDir(null)
+    const srcNorm = norm(srcPath)
+    const destNorm = norm(destDir)
+    // Don't move onto itself
+    if (srcNorm === destNorm) return
+    // Don't move into current parent (already there)
+    const parentDir = srcNorm.substring(0, srcNorm.lastIndexOf('/'))
+    if (parentDir === destNorm) return
+    // Don't move a folder into its own descendant
+    if (destNorm.startsWith(srcNorm + '/')) return
+    const name = srcNorm.split('/').pop() ?? ''
+    const destPath = destNorm + '/' + name
+    try {
+      await copyPath(srcPath, destPath)
+      await trashEntry(srcPath)
+      await loadRoot()
+    } catch {}
+  }, [loadRoot])
 
   useEffect(() => {
     const handler = (e: Event): void => {
       const { parentDir, type } = (e as CustomEvent<{ parentDir: string; type: 'file' | 'folder' }>).detail
-      if (norm(parentDir) === projectRoot) setCreating({ parentDir, type })
+      if (norm(parentDir) === projectRoot) {
+        setCreating({ parentDir: projectRoot, type })
+        setCreatingValue('')
+      }
     }
     document.addEventListener('acc:new-file-at-root', handler)
     return () => document.removeEventListener('acc:new-file-at-root', handler)
   }, [projectRoot])
+
+  useEffect(() => {
+    const collapseAll = (): void => {
+      setExpanded(new Set())
+      saveExpanded(projectRoot, new Set())
+    }
+    const expandAll = (): void => {
+      const dirs = new Set<string>()
+      const collectDirs = (entries: FsEntry[]): void => {
+        for (const e of entries) {
+          if (!e.isDirectory) continue
+          const p = norm(e.path)
+          dirs.add(p)
+          const children = childrenMap.get(p)
+          if (children) collectDirs(children)
+        }
+      }
+      collectDirs(rootEntries)
+      setExpanded(dirs)
+      saveExpanded(projectRoot, dirs)
+      dirs.forEach((p) => loadChildren(p))
+    }
+    document.addEventListener('acc:collapse-all-folders', collapseAll)
+    document.addEventListener('acc:expand-all-folders', expandAll)
+    return () => {
+      document.removeEventListener('acc:collapse-all-folders', collapseAll)
+      document.removeEventListener('acc:expand-all-folders', expandAll)
+    }
+  }, [projectRoot, rootEntries, childrenMap, loadChildren])
 
   if (!projectRoot) {
     return (
@@ -527,11 +711,88 @@ export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileC
     )
   }
 
-  const nodeProps = { gitMap, projectRoot, activeFilePath, focusedPath, renamingPath, expanded, childrenMap, onFileClick, onContextMenu: handleContextMenu, onRenameSubmit: handleRenameSubmit, onRenameCancel: () => setRenamingPath(null), onToggle: handleToggle, onQuickNew: handleQuickNew, onLoadChildren: loadChildren, onSetFocus: setFocusedPath }
+  // Filter mode: show a flat list of matching files
+  if (filterText) {
+    const lower = filterText.toLowerCase()
+    const matched = allFilesLoaded
+      ? allFiles.filter((f) => norm(f).toLowerCase().includes(lower))
+      : []
+    return (
+      <div className="flex flex-col flex-1 min-h-0">
+        <div className="flex-1 overflow-y-auto py-1 px-1">
+          {!allFilesLoaded && (
+            <p className="text-xs text-zinc-600 text-center py-6">Indexing…</p>
+          )}
+          {allFilesLoaded && matched.length === 0 && (
+            <p className="text-xs text-zinc-600 text-center py-6">No files match</p>
+          )}
+          {matched.map((filePath) => {
+            const name = norm(filePath).split('/').pop() ?? filePath
+            const rel = norm(filePath).slice(projectRoot.length + 1)
+            const dir = rel.includes('/') ? rel.substring(0, rel.lastIndexOf('/')) : ''
+            const isActive = activeFilePath !== null && norm(filePath) === norm(activeFilePath)
+            return (
+              <button
+                key={filePath}
+                onClick={() => onFileClick(filePath, undefined)}
+                className={cn(
+                  'w-full flex items-center gap-1.5 px-2 py-1 text-left rounded-sm transition-colors',
+                  isActive ? 'bg-brand-panel/60' : 'hover:bg-brand-panel/40'
+                )}
+              >
+                <span className="flex-shrink-0 w-4 flex items-center"><FileIcon name={name} /></span>
+                <span className="flex-1 min-w-0">
+                  <span className="text-xs text-zinc-300 truncate block">{name}</span>
+                  {dir && <span className="text-[11px] text-zinc-600 truncate block">{dir}</span>}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
+  const nodeProps = { gitMap, projectRoot, activeFilePath, focusedPath, renamingPath, creating, creatingValue, expanded, childrenMap, onFileClick, onContextMenu: handleContextMenu, onRenameSubmit: handleRenameSubmit, onRenameCancel: () => setRenamingPath(null), onToggle: handleToggle, onQuickNew: handleQuickNew, onLoadChildren: loadChildren, onSetFocus: setFocusedPath, onCreatingChange: setCreatingValue, onCreateSubmit: handleCreateConfirm, onCreateCancel: () => { setCreating(null); setCreatingValue('') }, extDropDir, onExternalDragOver: setExtDropDir, onExternalDrop: handleExternalDrop, onInternalDrop: handleInternalDrop }
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      <div ref={treeBodyRef} className="flex-1 overflow-y-auto py-1 px-1">
+      <div
+        ref={treeBodyRef}
+        className="flex-1 overflow-y-auto py-1 px-1"
+        onContextMenu={(e) => {
+          e.preventDefault()
+          const rootEntry: FsEntry = { name: projectRoot.split('/').pop() ?? '', path: projectRoot, isDirectory: true }
+          setCtxTarget({ x: e.clientX, y: e.clientY, entry: rootEntry, rel: '' })
+        }}
+        onDragOver={(e) => {
+          if (e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes('application/orbit-file')) e.preventDefault()
+        }}
+        onDragLeave={(e) => { if (!treeBodyRef.current?.contains(e.relatedTarget as Node)) setExtDropDir(null) }}
+        onDrop={(e) => {
+          const orbitSrc = e.dataTransfer.getData('application/orbit-file')
+          if (orbitSrc) {
+            e.preventDefault()
+            e.stopPropagation()
+            void handleInternalDrop(orbitSrc, projectRoot)
+            return
+          }
+          if (!e.dataTransfer.types.includes('Files')) return
+          e.preventDefault()
+          e.stopPropagation()
+          void handleExternalDrop(projectRoot, Array.from(e.dataTransfer.files))
+        }}
+      >
+        {creating?.parentDir === projectRoot && (
+          <InlineCreateRow
+            type={creating.type}
+            depth={0}
+            value={creatingValue}
+            onChange={setCreatingValue}
+            onSubmit={handleCreateConfirm}
+            onCancel={() => { setCreating(null); setCreatingValue('') }}
+          />
+        )}
         {rootEntries.map((entry) => (
           <TreeNode key={entry.path} entry={entry} depth={0} {...nodeProps} />
         ))}
@@ -546,11 +807,12 @@ export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileC
           rel={ctxTarget.rel}
           editors={editors}
           onFileClick={onFileClick}
-          onRename={() => setRenamingPath(ctxTarget.entry.path)}
-          onDelete={() => setDeletingEntry(ctxTarget.entry)}
+          onRename={ctxTarget.entry.path === projectRoot ? undefined : () => setRenamingPath(ctxTarget.entry.path)}
+          onDelete={ctxTarget.entry.path === projectRoot ? undefined : () => setDeletingEntry(ctxTarget.entry)}
           onDismiss={() => setCtxTarget(null)}
           onNewFile={ctxTarget.entry.isDirectory ? () => handleQuickNew(norm(ctxTarget.entry.path), 'file') : undefined}
           onNewFolder={ctxTarget.entry.isDirectory ? () => handleQuickNew(norm(ctxTarget.entry.path), 'folder') : undefined}
+          onMoveToWindow={onMoveToWindow}
         />
       )}
 
@@ -559,15 +821,6 @@ export function FileTree({ projectRoot: rootProp, activeFilePath = null, onFileC
           entry={deletingEntry}
           onConfirm={handleDeleteConfirm}
           onCancel={() => setDeletingEntry(null)}
-        />
-      )}
-
-      {creating && (
-        <CreateItemDialog
-          parentDir={creating.parentDir}
-          type={creating.type}
-          onConfirm={handleCreateConfirm}
-          onCancel={() => setCreating(null)}
         />
       )}
     </div>

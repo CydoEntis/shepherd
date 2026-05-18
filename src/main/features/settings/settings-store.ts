@@ -18,8 +18,21 @@ export function getSettings(): AppSettings {
     const parsed = AppSettingsSchema.safeParse(raw)
     if (!parsed.success) return DEFAULT_SETTINGS
     const data = parsed.data
+    let dirty = false
     if (STALE_SHOW_SHORTCUTS.has(data.hotkeys.showShortcuts)) {
       data.hotkeys = { ...data.hotkeys, showShortcuts: 'Ctrl+Shift+K' }
+      dirty = true
+    }
+    // Hotkeys were temporarily swapped during a refactor — detect and correct each independently.
+    if (data.hotkeys.commandPalette === 'Ctrl+P') {
+      data.hotkeys = { ...data.hotkeys, commandPalette: 'Ctrl+Shift+P' }
+      dirty = true
+    }
+    if (data.hotkeys.projectPalette === 'Ctrl+Shift+P') {
+      data.hotkeys = { ...data.hotkeys, projectPalette: 'Ctrl+P' }
+      dirty = true
+    }
+    if (dirty) {
       const filePath = settingsPath()
       try { writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8') } catch { /* non-fatal */ }
     }

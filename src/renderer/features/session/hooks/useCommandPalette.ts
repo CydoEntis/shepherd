@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useStore } from '../../../store/root.store'
-import { findTabForSession } from '../../layout/layout-tree'
 
 export interface PaletteItem {
   id: string
   label: string
   description?: string
   iconName: string
+  section?: string
   action: () => void | Promise<void>
 }
 
@@ -19,11 +19,7 @@ export function useCommandPalette(open: boolean, onClose: () => void, onShowShor
   const [query, setQuery] = useState('')
   const [selectedIdx, setSelectedIdx] = useState(0)
 
-  const sessions = useStore((s) => s.sessions)
   const settings = useStore((s) => s.settings)
-  const paneTree = useStore((s) => s.paneTree)
-  const setActiveSession = useStore((s) => s.setActiveSession)
-  const setFocusedSession = useStore((s) => s.setFocusedSession)
 
   useEffect(() => {
     if (!open) { setQuery(''); setSelectedIdx(0) }
@@ -34,34 +30,16 @@ export function useCommandPalette(open: boolean, onClose: () => void, onShowShor
   const q = query.toLowerCase()
 
   const items = useMemo<PaletteItem[]>(() => {
-    const result: PaletteItem[] = []
     const hk = settings.hotkeys
 
-    Object.values(sessions)
-      .filter((m) => m.status === 'running' && (!q || m.name.toLowerCase().includes(q)))
-      .forEach((m) => result.push({
-        id: `session-${m.sessionId}`,
-        label: m.name,
-        description: m.cwd,
-        iconName: 'Terminal',
-        action: () => {
-          const tabId = findTabForSession(paneTree, m.sessionId)
-          if (tabId) { setActiveSession(tabId); setFocusedSession(m.sessionId) }
-          onClose()
-        }
-      }))
-
-    const actions: PaletteItem[] = [
-      { id: 'new-session',    label: 'New Session',        description: hk.newSession,    iconName: 'Plus',        action: () => { document.dispatchEvent(new CustomEvent('acc:new-session'));      onClose() } },
-      { id: 'open-file',      label: 'File Tree',          description: hk.openFileFinder, iconName: 'FolderTree', action: () => { document.dispatchEvent(new CustomEvent('acc:open-file-finder')); onClose() } },
-      { id: 'open-project',   label: 'Open Project',       description: hk.openProject,   iconName: 'FolderOpen',  action: () => { document.dispatchEvent(new CustomEvent('acc:open-project'));    onClose() } },
-      { id: 'toggle-notes',   label: 'Toggle Notes',       description: hk.quickNote,     iconName: 'NotebookPen', action: () => { document.dispatchEvent(new CustomEvent('acc:quick-note'));   onClose() } },
-      { id: 'show-shortcuts', label: 'Keyboard Shortcuts', description: hk.showShortcuts, iconName: 'Keyboard',    action: () => { onShowShortcuts?.(); onClose() } },
+    return [
+      { id: 'new-session',    label: 'New Terminal',       description: hk.newSession,    iconName: 'Plus',      section: 'Commands', action: () => { document.dispatchEvent(new CustomEvent('acc:new-session'));       onClose() } },
+      { id: 'open-project',   label: 'Open Folder',        description: hk.openProject,  iconName: 'FolderOpen', section: 'Commands', action: () => { document.dispatchEvent(new CustomEvent('acc:open-project'));     onClose() } },
+      { id: 'open-settings',  label: 'Open Settings',      description: '',              iconName: 'Settings',   section: 'Commands', action: () => { document.dispatchEvent(new CustomEvent('acc:open-settings'));    onClose() } },
+      { id: 'git-review',     label: 'Review Git Changes', description: hk.reviewChanges, iconName: 'GitBranch', section: 'Commands', action: () => { document.dispatchEvent(new CustomEvent('acc:toggle-git-review')); onClose() } },
+      { id: 'show-shortcuts', label: 'Keyboard Shortcuts', description: hk.showShortcuts, iconName: 'Keyboard',  section: 'Commands', action: () => { onShowShortcuts?.(); onClose() } },
     ].filter((a) => !q || a.label.toLowerCase().includes(q))
-
-    actions.forEach((a) => result.push(a))
-    return result
-  }, [sessions, settings.hotkeys, q, paneTree, setActiveSession, setFocusedSession, onClose, onShowShortcuts])
+  }, [settings.hotkeys, q, onClose, onShowShortcuts])
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (!open) return

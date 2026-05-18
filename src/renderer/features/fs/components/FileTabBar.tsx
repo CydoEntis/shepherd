@@ -26,6 +26,18 @@ function rootName(r: string): string {
   return r.replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? r
 }
 
+function shortPath(filePath: string, root: string | null): string {
+  const norm = filePath.replace(/\\/g, '/')
+  const base = norm.substring(0, norm.lastIndexOf('/')) // parent dir
+  if (root) {
+    const normRoot = root.replace(/\\/g, '/')
+    const rel = base.startsWith(normRoot) ? base.slice(normRoot.length).replace(/^\//, '') : base
+    return rel || rootName(root)
+  }
+  const parts = base.split('/').filter(Boolean)
+  return parts.slice(-2).join('/')
+}
+
 export const PROJECT_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f97316', '#06b6d4', '#eab308', '#84cc16']
 
 export function projectColorIndex(root: string, openProjects: string[]): number {
@@ -67,7 +79,6 @@ export function FileTabBar({ openFiles, activeFilePath, onActivate, onClose }: P
   const paths = openFiles.map((f) => f.path)
 
   const roots = openFiles.map((f) => deriveRoot(f.path, openProjects))
-  const multiRoot = new Set(roots.filter(Boolean)).size > 1
 
   if (openFiles.length === 0) {
     return <span className="text-xs text-zinc-600 px-3">No files open</span>
@@ -101,9 +112,7 @@ export function FileTabBar({ openFiles, activeFilePath, onActivate, onClose }: P
               {f.hasChanges && <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 flex-shrink-0" />}
               <div className="flex flex-col min-w-0 flex-1">
                 <span className="text-sm font-medium truncate leading-snug">{shortName(f.path)}</span>
-                {multiRoot && root && (
-                  <span className="text-[10px] truncate leading-tight" style={{ color }}>{rootName(root)}</span>
-                )}
+                <span className="text-[10px] truncate leading-tight text-zinc-600">{shortPath(f.path, root)}</span>
               </div>
               <button
                 onClick={(e) => { e.stopPropagation(); onClose(f.path) }}

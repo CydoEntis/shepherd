@@ -1,11 +1,11 @@
 import { ipcMain, shell, clipboard } from 'electron'
 import { promises as fs } from 'fs'
-import { join, dirname, resolve, basename } from 'path'
+import { join, dirname, resolve, extname, relative, sep } from 'path'
+import ignore, { type Ignore } from 'ignore'
 import { exec, execFile, spawn } from 'child_process'
 import { promisify } from 'util'
 import { IPC } from '@shared/ipc-channels'
 import type { FsEntry, GitStatusEntry } from '@shared/ipc-types'
-import { getWorktreesDir } from '../../lib/paths'
 
 const CANDIDATE_EDITORS = [
   { name: 'VS Code', command: 'code' },
@@ -17,7 +17,23 @@ const CANDIDATE_EDITORS = [
 
 const execAsync = promisify(exec)
 const execFileAsync = promisify(execFile)
-const IGNORE = new Set(['.git', 'node_modules', 'dist', 'out', '.next', '__pycache__'])
+const IGNORE = new Set([
+  // VCS
+  '.git', '.svn', '.hg',
+  // Dependencies
+  'node_modules', 'vendor', 'bower_components',
+  // Build outputs
+  'dist', 'out', 'build', '.next', '.nuxt', '.svelte-kit', '.vite', '.expo',
+  'target', '_build', '.build', 'storybook-static',
+  // Python
+  '__pycache__', '.venv', 'venv', 'env', '.mypy_cache', '.pytest_cache', '.ruff_cache',
+  // Caches & temp
+  '.cache', '.turbo', '.parcel-cache', '.sass-cache', '.temp', '.tmp', 'tmp', 'temp',
+  // Coverage / test output
+  'coverage', '.nyc_output',
+  // Logs
+  'logs',
+])
 const MAX_FILE_BYTES = 5_000_000
 
 async function detectShells(): Promise<{ name: string; path: string }[]> {
@@ -154,6 +170,32 @@ export function registerFsIpc(): void {
     await fs.copyFile(srcPath, destPath)
   })
 
+  ipcMain.handle(IPC.FS_COPY_PATH, async (_, { srcPath, destPath }: { srcPath: string; destPath: string }): Promise<void> => {
+    async function copyRecursive(src: string, dest: string): Promise<void> {
+      const stat = await fs.stat(src)
+      if (stat.isDirectory()) {
+        await fs.mkdir(dest, { recursive: true })
+        const entries = await fs.readdir(src, { withFileTypes: true })
+        await Promise.all(entries.map((e) => copyRecursive(join(src, e.name), join(dest, e.name))))
+      } else {
+        await fs.mkdir(dirname(dest), { recursive: true })
+        await fs.copyFile(src, dest)
+      }
+    }
+    // Auto-rename the top-level dest if it already exists (e.g. file (1).txt, file (2).txt)
+    async function findAvailableDest(dest: string): Promise<string> {
+      try { await fs.access(dest) } catch { return dest }
+      const ext = extname(dest)
+      const base = dest.slice(0, dest.length - ext.length)
+      for (let i = 1; i < 1000; i++) {
+        const candidate = `${base} (${i})${ext}`
+        try { await fs.access(candidate) } catch { return candidate }
+      }
+      return dest
+    }
+    await copyRecursive(srcPath, await findAvailableDest(destPath))
+  })
+
   ipcMain.handle(IPC.SHELL_OPEN_EXTERNAL, (_event, { url }: { url: string }) => {
     return shell.openExternal(url)
   })
@@ -163,15 +205,93 @@ export function registerFsIpc(): void {
   ipcMain.handle(IPC.FS_FIND_FILES, async (_, { rootPath }: { rootPath: string }): Promise<string[]> => {
     const results: string[] = []
     const MAX = 5000
+
+    // Build a root-level ignore instance from .gitignore if present
+    async function loadGitignore(dir: string): Promise<Ignore> {
+      const ig = ignore()
+      try {
+        const raw = await fs.readFile(join(dir, '.gitignore'), 'utf-8')
+        ig.add(raw)
+      } catch { /* no .gitignore — that's fine */ }
+      return ig
+    }
+
+    const rootIg = await loadGitignore(rootPath)
+    // Per-directory ignore instances (for nested .gitignore files in monorepos)
+    const igCache = new Map<string, Ignore>([[rootPath, rootIg]])
+
+    async function getIg(dir: string): Promise<Ignore> {
+      if (igCache.has(dir)) return igCache.get(dir)!
+      const parentIg = await getIg(dirname(dir))
+      const local = ignore()
+      try {
+        const raw = await fs.readFile(join(dir, '.gitignore'), 'utf-8')
+        local.add(raw)
+      } catch { /* none */ }
+      // Merge parent rules into local so relative paths resolve correctly
+      const merged = ignore()
+      merged.add(parentIg)
+      merged.add(local)
+      igCache.set(dir, merged)
+      return merged
+    }
+
     async function walk(dir: string): Promise<void> {
       if (results.length >= MAX) return
       let entries: import('fs').Dirent[]
       try { entries = await fs.readdir(dir, { withFileTypes: true }) } catch { return }
+      const ig = await getIg(dir)
       for (const e of entries) {
         if (IGNORE.has(e.name)) continue
+        if (e.isDirectory() && e.name.startsWith('.')) continue
         const full = join(dir, e.name)
+        // Test relative path from rootPath using forward slashes (gitignore convention)
+        const rel = relative(rootPath, full).split(sep).join('/')
+        try { if (ig.ignores(rel)) continue } catch { /* ignore is strict about paths — skip bad ones */ }
         if (e.isDirectory()) { await walk(full) }
         else { results.push(full); if (results.length >= MAX) return }
+      }
+    }
+    await walk(rootPath)
+    return results
+  })
+
+  ipcMain.handle(IPC.FS_SEARCH_IN_FILES, async (_, { rootPath, query, caseSensitive = false }: { rootPath: string; query: string; caseSensitive?: boolean }) => {
+    if (!query.trim()) return []
+    interface SearchResult { filePath: string; lineNumber: number; lineContent: string; matchStart: number; matchEnd: number }
+    const results: SearchResult[] = []
+    const MAX_RESULTS = 500
+    const searchText = caseSensitive ? query : query.toLowerCase()
+    const BINARY_RE = /\.(png|jpg|jpeg|gif|webp|bmp|ico|svg|pdf|zip|tar|gz|7z|exe|dll|bin|so|dylib|wasm|ttf|woff|woff2|eot|mp3|mp4|avi|mov|mkv|db|sqlite)$/i
+    async function walk(dir: string): Promise<void> {
+      if (results.length >= MAX_RESULTS) return
+      let entries: import('fs').Dirent[]
+      try { entries = await fs.readdir(dir, { withFileTypes: true }) } catch { return }
+      const SEARCH_IGNORE = new Set([...IGNORE, '.vscode', 'coverage', '.turbo', 'build'])
+      for (const e of entries) {
+        if (SEARCH_IGNORE.has(e.name)) continue
+        if (results.length >= MAX_RESULTS) return
+        const full = join(dir, e.name)
+        if (e.isDirectory()) { await walk(full) }
+        else {
+          if (BINARY_RE.test(e.name)) continue
+          let content: string
+          try {
+            const stat = await fs.stat(full)
+            if (stat.size > 500_000) continue
+            content = await fs.readFile(full, 'utf-8')
+          } catch { continue }
+          const lines = content.split('\n')
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i]
+            const searchLine = caseSensitive ? line : line.toLowerCase()
+            const idx = searchLine.indexOf(searchText)
+            if (idx !== -1) {
+              results.push({ filePath: full.replace(/\\/g, '/'), lineNumber: i + 1, lineContent: line.slice(0, 300), matchStart: idx, matchEnd: idx + query.length })
+              if (results.length >= MAX_RESULTS) return
+            }
+          }
+        }
       }
     }
     await walk(rootPath)
@@ -317,47 +437,47 @@ export function registerFsIpc(): void {
     }
   })
 
-  ipcMain.handle(IPC.FS_GIT_WORKTREE_CREATE, async (_, { projectRoot, branchName }: { projectRoot: string; branchName: string }): Promise<{ worktreePath: string; branchName: string; baseBranch: string }> => {
-    const { stdout: baseOut } = await execAsync('git rev-parse --abbrev-ref HEAD', { cwd: projectRoot })
-    const baseBranch = baseOut.trim() || 'main'
-    const suffix = branchName.split('/').pop() ?? 'session'
-    const projectName = basename(projectRoot)
-
-    // Place worktrees under the Orbit data dir, grouped by project
-    const worktreesBase = join(getWorktreesDir(), projectName)
-    await fs.mkdir(worktreesBase, { recursive: true })
-    let worktreePath = join(worktreesBase, suffix)
-    let counter = 2
-    while (true) {
-      try { await fs.access(worktreePath); worktreePath = join(worktreesBase, `${suffix}-${counter++}`) }
-      catch { break }
+  ipcMain.handle(IPC.FS_GIT_WORKTREE_LIST, async (_, { projectRoot }: { projectRoot: string }): Promise<{ path: string; branch: string; isMain: boolean }[]> => {
+    try {
+      const { stdout } = await execAsync('git worktree list --porcelain', { cwd: projectRoot })
+      const worktrees: { path: string; branch: string; isMain: boolean }[] = []
+      const blocks = stdout.trim().split(/\n\n/)
+      for (let i = 0; i < blocks.length; i++) {
+        const lines = blocks[i].split('\n')
+        const path = lines.find((l) => l.startsWith('worktree '))?.slice(9).replace(/\\/g, '/') ?? ''
+        const branch = lines.find((l) => l.startsWith('branch '))?.slice(7).replace('refs/heads/', '') ?? ''
+        if (path) worktrees.push({ path, branch, isMain: i === 0 })
+      }
+      return worktrees
+    } catch {
+      return []
     }
+  })
 
+  ipcMain.handle(IPC.FS_GIT_WORKTREE_CREATE, async (_, { projectRoot, branchName, worktreePath }: { projectRoot: string; branchName: string; worktreePath: string }): Promise<{ worktreePath: string; branchName: string }> => {
+    await fs.mkdir(join(worktreePath, '..'), { recursive: true })
     const alreadyUsed = (stderr: string): string | null => {
       const m = /already used by worktree at '([^']+)'/.exec(stderr)
       return m ? m[1] : null
     }
-
     try {
       await execAsync(`git worktree add "${worktreePath}" -b "${branchName}"`, { cwd: projectRoot })
     } catch (err: unknown) {
       const msg = (err as any).stderr as string ?? String(err)
       if (msg.includes('already exists')) {
-        // Branch exists from a prior session — check it out directly
         try {
           await execAsync(`git worktree add "${worktreePath}" "${branchName}"`, { cwd: projectRoot })
         } catch (err2: unknown) {
           const msg2 = (err2 as any).stderr as string ?? String(err2)
           const existing = alreadyUsed(msg2)
-          if (existing) return { worktreePath: existing, branchName, baseBranch }
+          if (existing) return { worktreePath: existing, branchName }
           throw err2
         }
       } else {
         throw err
       }
     }
-
-    return { worktreePath, branchName, baseBranch }
+    return { worktreePath, branchName }
   })
 
   ipcMain.handle(IPC.FS_GIT_WORKTREE_REMOVE, async (_, { projectRoot, worktreePath }: { projectRoot: string; worktreePath: string }): Promise<{ success: boolean; error?: string }> => {
@@ -366,30 +486,6 @@ export function registerFsIpc(): void {
       return { success: true }
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : String(err) }
-    }
-  })
-
-  ipcMain.handle(IPC.FS_GIT_WORKTREE_STATS, async (_, { worktreePath, baseBranch }: { worktreePath: string; baseBranch: string }): Promise<{ added: number; deleted: number; commits: number }> => {
-    function parseShortstat(s: string): { added: number; deleted: number } {
-      return {
-        added: parseInt(s.match(/(\d+) insertion/)?.[1] ?? '0', 10),
-        deleted: parseInt(s.match(/(\d+) deletion/)?.[1] ?? '0', 10),
-      }
-    }
-    try {
-      const [branchRes, workRes, stageRes, countRes] = await Promise.allSettled([
-        execAsync(`git diff ${baseBranch}...HEAD --shortstat`, { cwd: worktreePath }),
-        execAsync('git diff --shortstat', { cwd: worktreePath }),
-        execAsync('git diff --cached --shortstat', { cwd: worktreePath }),
-        execAsync(`git rev-list ${baseBranch}..HEAD --count`, { cwd: worktreePath }),
-      ])
-      const branch = branchRes.status === 'fulfilled' ? parseShortstat(branchRes.value.stdout) : { added: 0, deleted: 0 }
-      const work = workRes.status === 'fulfilled' ? parseShortstat(workRes.value.stdout) : { added: 0, deleted: 0 }
-      const stage = stageRes.status === 'fulfilled' ? parseShortstat(stageRes.value.stdout) : { added: 0, deleted: 0 }
-      const commits = countRes.status === 'fulfilled' ? parseInt(countRes.value.stdout.trim(), 10) || 0 : 0
-      return { added: branch.added + work.added + stage.added, deleted: branch.deleted + work.deleted + stage.deleted, commits }
-    } catch {
-      return { added: 0, deleted: 0, commits: 0 }
     }
   })
 

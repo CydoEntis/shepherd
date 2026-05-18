@@ -6,7 +6,7 @@ interface Callbacks {
   onTogglePalette: () => void
   onShowShortcuts: () => void
   onNewNoteDrawer: () => void
-  onOpenFileFinder: () => void
+  onToggleProjectPalette: () => void
 }
 
 function match(e: KeyboardEvent, binding: string): boolean {
@@ -16,32 +16,38 @@ function match(e: KeyboardEvent, binding: string): boolean {
   const needsShift = parts.includes('shift')
   const needsAlt = parts.includes('alt')
   const hasExplicitMods = needsCtrl || needsShift || needsAlt
+  // e.key changes with modifiers (Shift+P = 'P'); e.code is the physical key regardless of modifiers
+  const keyMatches = e.key.toLowerCase() === key ||
+    (key.length === 1 && e.code === `Key${key.toUpperCase()}`)
   return (
-    e.key.toLowerCase() === key &&
+    keyMatches &&
     e.ctrlKey === needsCtrl &&
     e.altKey === needsAlt &&
     (hasExplicitMods ? e.shiftKey === needsShift : !e.ctrlKey && !e.altKey)
   )
 }
 
-export function useKeyboardShortcuts({ onTogglePalette, onShowShortcuts, onNewNoteDrawer, onOpenFileFinder }: Callbacks): void {
+export function useKeyboardShortcuts({ onTogglePalette, onShowShortcuts, onNewNoteDrawer, onToggleProjectPalette }: Callbacks): void {
   const removeTab = useStore((s) => s.removeTab)
+  const updateSettings = useStore((s) => s.updateSettings)
   const settings = useStore((s) => s.settings)
   const activeSessionId = useStore((s) => s.activeSessionId)
 
+  const updateSettingsRef = useRef(updateSettings)
   const settingsRef = useRef(settings)
   const activeSessionIdRef = useRef(activeSessionId)
   const onTogglePaletteRef = useRef(onTogglePalette)
   const onShowShortcutsRef = useRef(onShowShortcuts)
   const onNewNoteDrawerRef = useRef(onNewNoteDrawer)
-  const onOpenFileFinderRef = useRef(onOpenFileFinder)
+  const onToggleProjectPaletteRef = useRef(onToggleProjectPalette)
 
+  useEffect(() => { updateSettingsRef.current = updateSettings }, [updateSettings])
   useEffect(() => { settingsRef.current = settings }, [settings])
   useEffect(() => { activeSessionIdRef.current = activeSessionId }, [activeSessionId])
   useEffect(() => { onTogglePaletteRef.current = onTogglePalette }, [onTogglePalette])
   useEffect(() => { onShowShortcutsRef.current = onShowShortcuts }, [onShowShortcuts])
   useEffect(() => { onNewNoteDrawerRef.current = onNewNoteDrawer }, [onNewNoteDrawer])
-  useEffect(() => { onOpenFileFinderRef.current = onOpenFileFinder }, [onOpenFileFinder])
+  useEffect(() => { onToggleProjectPaletteRef.current = onToggleProjectPalette }, [onToggleProjectPalette])
 
   useEffect(() => {
     const onQuickNoteEvent = (): void => onNewNoteDrawerRef.current()
@@ -55,9 +61,14 @@ export function useKeyboardShortcuts({ onTogglePalette, onShowShortcuts, onNewNo
     const handleKeyDown = (e: KeyboardEvent): void => {
       const hk = settingsRef.current.hotkeys
 
-      if (match(e, hk.quickNote)) {
+      if (e.ctrlKey && (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '0')) {
         e.preventDefault(); e.stopPropagation()
-        onNewNoteDrawerRef.current()
+        const current = settingsRef.current.uiFontSize ?? 14
+        let next = current
+        if (e.key === '+' || e.key === '=') next = Math.min(24, current + 1)
+        else if (e.key === '-') next = Math.max(10, current - 1)
+        else if (e.key === '0') next = 14
+        void updateSettingsRef.current({ uiFontSize: next })
       } else if (match(e, hk.newSession)) {
         e.preventDefault(); e.stopPropagation()
         document.dispatchEvent(new CustomEvent('acc:new-session'))
@@ -77,9 +88,9 @@ export function useKeyboardShortcuts({ onTogglePalette, onShowShortcuts, onNewNo
       } else if (match(e, hk.reviewChanges)) {
         e.preventDefault(); e.stopPropagation()
         document.dispatchEvent(new CustomEvent('acc:toggle-git-review'))
-      } else if (match(e, hk.openFileFinder)) {
+      } else if (match(e, hk.projectPalette)) {
         e.preventDefault(); e.stopPropagation()
-        onOpenFileFinderRef.current()
+        onToggleProjectPaletteRef.current()
       }
     }
 

@@ -3,10 +3,10 @@ import { toast } from 'sonner'
 import { useStore } from '../../../store/root.store'
 import { pickFolder } from '../../window/window.service'
 import { createSession, killSession } from '../session.service'
-import { removeWorktree } from '../../fs/fs.service'
 import { findTabForSession } from '../../layout/layout-tree'
 import { normalizePath } from '../../../lib/utils'
 import { DEFAULT_COLS, DEFAULT_ROWS } from '@shared/constants'
+import { ROOT_WORKSPACE_ID } from '@shared/ipc-types'
 
 const MAX_PROJECTS = 10
 
@@ -27,6 +27,7 @@ export function useProjects(): UseProjectsReturn {
   const upsertSession = useStore((s) => s.upsertSession)
   const addTab = useStore((s) => s.addTab)
   const closePane = useStore((s) => s.closePane)
+  const activeWorkspaceId = useStore((s) => s.activeWorkspaceId)
 
   const [refreshTicks, setRefreshTicks] = useState<Record<string, number>>({})
 
@@ -57,12 +58,13 @@ export function useProjects(): UseProjectsReturn {
         recentProjects: recent,
       })
       try {
+        const workspaceId = activeWorkspaceId !== ROOT_WORKSPACE_ID ? activeWorkspaceId : undefined
         const meta = await createSession({
           name: folder.split(/[\\/]/).pop() ?? 'project',
-          agentCommand: 'claude',
           cwd: folder,
           cols: DEFAULT_COLS,
           rows: DEFAULT_ROWS,
+          workspaceId,
         })
         upsertSession(meta)
         addTab(meta.sessionId)
@@ -74,16 +76,12 @@ export function useProjects(): UseProjectsReturn {
     const normalized = normalizePath(root)
     const projectSessions = Object.values(sessions).filter((m) => {
       const cwd = normalizePath(m.cwd ?? '')
-      const projectRoot = normalizePath(m.projectRoot ?? '')
-      return cwd.startsWith(normalized) || projectRoot === normalized
+      return cwd.startsWith(normalized)
     })
     for (const m of projectSessions) {
       const tabId = findTabForSession(paneTree, m.sessionId)
       try { await killSession(m.sessionId) } catch {}
       if (tabId) closePane(tabId, m.sessionId)
-      if (m.worktreePath && m.projectRoot) {
-        removeWorktree(m.projectRoot, m.worktreePath).catch(() => {})
-      }
     }
     await updateSettings({
       openProjects: settings.openProjects.filter((p) => normalizePath(p) !== normalized),
