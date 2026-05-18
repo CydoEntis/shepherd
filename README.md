@@ -52,9 +52,6 @@ Launch sessions with any agent command directly:
 ### Built-in File Viewer
 Open any project directory from the sidebar. Browse the file tree, view files with full syntax highlighting (100+ languages via Shiki), preview Markdown in a dedicated pane, and inspect git diffs — all without leaving Orbit. Markdown preview panes can be split or detached to their own window.
 
-### Notes Panel
-A lightweight markdown notepad accessible from the sidebar. Each note is saved as an individual `.md` file in a configurable directory — point it at iCloud, Dropbox, or OneDrive for automatic sync across machines. Notes can be dragged into the pane layout, moved to secondary windows, and their location is restored on next launch.
-
 ### Command Palette
 Hit `Ctrl+P` to open the command palette. Search and jump to any session, open projects, or trigger actions without touching the mouse.
 
