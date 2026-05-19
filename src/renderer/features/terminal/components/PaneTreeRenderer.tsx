@@ -83,7 +83,7 @@ export function PaneTreeRenderer({ node, tabId, onContextMenu: _onContextMenu, f
         : 'w-[3px] bg-brand-panel/80 hover:bg-brand-accent/60 transition-colors cursor-col-resize flex-shrink-0'
 
     return (
-      <PanelGroup orientation={node.direction} className="w-full h-full gap-0">
+      <PanelGroup key={`${node.id}-${node.children.length}`} orientation={node.direction} className="w-full h-full gap-0">
         {node.children.map((child, idx) => [
           idx > 0 && <PanelResizeHandle key={`handle-${node.id}-${idx}`} className={handleClass} />,
           <Panel key={child.id} defaultSize={Math.floor(100 / node.children.length)} minSize={10}>

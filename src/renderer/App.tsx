@@ -18,6 +18,7 @@ import { GitReviewPanel } from './features/workspace/components/GitReviewPanel'
 import { useSessionLifecycle } from './features/session/hooks/useSessionLifecycle'
 import { useLayoutPersistence } from './features/session/hooks/useLayoutPersistence'
 import { useLayoutRestore } from './features/session/hooks/useLayoutRestore'
+import { useStartupRestore } from './features/session/hooks/useStartupRestore'
 import { useKeyboardShortcuts } from './features/session/hooks/useKeyboardShortcuts'
 import { usePaneActions } from './features/session/hooks/usePaneActions'
 import { useAutoUpdater } from './features/updater/hooks/useAutoUpdater'
@@ -133,6 +134,7 @@ export function App(): JSX.Element {
   useSessionLifecycle()
   useLayoutPersistence()
   useLayoutRestore()
+  useStartupRestore()
   useAutoUpdater()
 
   const tabOrder = useStore((s) => s.tabOrder)
@@ -171,6 +173,14 @@ export function App(): JSX.Element {
   const setActiveWorkspaceId = useStore((s) => s.setActiveWorkspaceId)
   const resetRootPane = useStore((s) => s.resetRootPane)
   const workspaceProject = workspaces.find((w) => w.id === activeWorkspaceId)?.rootPath || null
+
+  // Remembers the last active session tab for each workspace so switching back restores it.
+  const workspaceSessionMapRef = useRef<Record<string, string>>({})
+  const workspaceSessionIdRef = useRef(workspaceSessionId)
+  const activeWorkspaceIdRef = useRef(activeWorkspaceId)
+  // Direct render-time assignment — always current, even during concurrent renders
+  workspaceSessionIdRef.current = workspaceSessionId
+  activeWorkspaceIdRef.current = activeWorkspaceId
   const { sidebarWidth, handleSidebarDragStart } = useSidebarResize(224)
 
   // Active session cwd — updated live via OSC 7 shell integration
@@ -236,9 +246,29 @@ export function App(): JSX.Element {
   }, [workspaces, setActiveWorkspaceId])
 
   const handleWorkspaceChange = useCallback((id: string) => {
+    // Save the session we're leaving (including __root__) so switching back restores it.
+    const leavingSession = workspaceSessionIdRef.current
+    if (leavingSession) {
+      workspaceSessionMapRef.current[activeWorkspaceIdRef.current] = leavingSession
+    }
+
     setActiveWorkspaceId(id)
-    setWorkspaceSessionId('__root__')
-    resetRootPane()
+
+    // Restore the last session for the destination workspace if it still exists.
+    const saved = workspaceSessionMapRef.current[id]
+    if (saved && saved !== '__root__' && useStore.getState().paneTree[saved]) {
+      // Real terminal session with an existing pane tree
+      setWorkspaceSessionId(saved)
+      useStore.getState().setActiveSession(saved)
+    } else if (saved === '__root__') {
+      // Returning to a workspace that was last showing __root__ — preserve its files
+      setWorkspaceSessionId('__root__')
+    } else {
+      // First visit to this workspace — show a clean home view
+      setWorkspaceSessionId('__root__')
+      resetRootPane()
+    }
+
     void setUiState({ activeWorkspaceId: id })
   }, [setActiveWorkspaceId, resetRootPane])
 

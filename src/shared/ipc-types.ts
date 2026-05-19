@@ -197,7 +197,7 @@ export const AppSettingsSchema = z.object({
   presets: z.array(PresetSchema).default([]),
   hotkeys: HotkeysSchema.default({}),
   confirmCloseSession: z.boolean().default(true),
-  resumeOnStartup: z.boolean().default(false),
+  resumeOnStartup: z.boolean().default(true),
   dataDirectory: z.string().default(''),
   lastActiveProject: z.string().default(''),
   defaultSessionDir: z.string().default(''),

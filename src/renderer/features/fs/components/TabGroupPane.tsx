@@ -1,10 +1,12 @@
 import { useRef, useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Search, ChevronUp, ChevronDown } from 'lucide-react'
+import { X, Search, ChevronUp, ChevronDown, ArrowRightLeft, ChevronRight } from 'lucide-react'
 import { MonacoEditorPane } from './MonacoEditorPane'
 import { useTerminal } from '../../terminal/hooks/useTerminal'
 import { TerminalBreadcrumbs } from '../../terminal/components/TerminalBreadcrumbs'
 import { writeToSession } from '../../session/session.service'
+import { listWindows, moveToWindow, detachTab } from '../../window/window.service'
+import { WindowMoveSubmenu } from '../../window/components/WindowMoveSubmenu'
 import { useStore } from '../../../store/root.store'
 import { normalizePath } from '../../../lib/utils'
 import { PaneTabBar } from '../../layout/components/PaneTabBar'
@@ -30,13 +32,39 @@ interface TerminalTabSlotProps {
 function TerminalTabSlot({ sessionId, isActive, tabId, leafId, onClose }: TerminalTabSlotProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const paneMenuRef = useRef<HTMLDivElement>(null)
+  const moveTriggerRef = useRef<HTMLButtonElement>(null)
+  const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const { ctxMenu, dismissCtxMenu, search } = useTerminal(sessionId, containerRef)
   const [searchTerm, setSearchTerm] = useState('')
   const [isDragOver, setIsDragOver] = useState(false)
+  const [otherWindows, setOtherWindows] = useState<{ windowId: string; windowName: string; windowColor: string }[]>([])
+  const [showMoveSubmenu, setShowMoveSubmenu] = useState(false)
+  const [submenuY, setSubmenuY] = useState(0)
 
-  // Suppress unused param lint — tabId/leafId reserved for future per-slot actions
-  void tabId
-  void leafId
+  const windowId = useStore((s) => s.windowId)
+  const isMainWindow = useStore((s) => s.isMainWindow)
+  const removeLayoutLeaf = useStore((s) => s.removeLayoutLeaf)
+  const detachPane = useStore((s) => s.detachPane)
+
+  useEffect(() => {
+    if (!ctxMenu) { setShowMoveSubmenu(false); return }
+    listWindows().then((wins) => {
+      setOtherWindows(wins
+        .filter((w) => windowId == null || w.windowId !== windowId)
+        .map((w) => ({ windowId: w.windowId, windowName: w.windowName, windowColor: w.windowColor })))
+    }).catch(() => {})
+    return () => { if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current) }
+  }, [ctxMenu, windowId])
+
+  const clearHide = (): void => { if (hideTimeoutRef.current) { clearTimeout(hideTimeoutRef.current); hideTimeoutRef.current = null } }
+  const scheduleHide = (): void => { clearHide(); hideTimeoutRef.current = setTimeout(() => setShowMoveSubmenu(false), 150) }
+  const getSubmenuX = (): number => {
+    const w = paneMenuRef.current?.offsetWidth ?? 164
+    const mx = ctxMenu?.x ?? 0
+    const rx = mx + w + 4
+    return rx + 160 > window.innerWidth ? mx - 164 : rx
+  }
 
   const handleDragOver = (e: React.DragEvent): void => {
     if (e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes('application/orbit-file')) {
@@ -134,10 +162,11 @@ function TerminalTabSlot({ sessionId, isActive, tabId, leafId, onClose }: Termin
         <>
           <div
             className="fixed inset-0 z-[9998]"
-            onMouseDown={() => dismissCtxMenu()}
-            onContextMenu={(e) => { e.preventDefault(); dismissCtxMenu() }}
+            onMouseDown={() => { dismissCtxMenu(); setShowMoveSubmenu(false) }}
+            onContextMenu={(e) => { e.preventDefault(); dismissCtxMenu(); setShowMoveSubmenu(false) }}
           />
           <div
+            ref={paneMenuRef}
             className="fixed z-[9999] bg-brand-surface border border-brand-panel/60 rounded shadow-xl py-1 min-w-[160px]"
             style={{ left: ctxMenu.x, top: ctxMenu.y }}
           >
@@ -149,12 +178,53 @@ function TerminalTabSlot({ sessionId, isActive, tabId, leafId, onClose }: Termin
             ))}
             <div className="my-1 border-t border-brand-panel/60" />
             <button
-              onMouseDown={(e) => { e.stopPropagation(); onClose(); dismissCtxMenu() }}
-              className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-red-400 hover:bg-brand-panel hover:text-red-300 transition-colors"
+              ref={moveTriggerRef}
+              onMouseEnter={() => {
+                clearHide()
+                const rect = moveTriggerRef.current?.getBoundingClientRect()
+                if (rect) setSubmenuY(rect.top)
+                setShowMoveSubmenu(true)
+              }}
+              onMouseLeave={scheduleHide}
+              className="w-full flex items-center justify-between px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors"
             >
+              <span className="flex items-center gap-2.5">
+                <span className="w-3.5 h-3.5 flex-shrink-0 flex items-center justify-center"><ArrowRightLeft size={12} /></span>
+                Move to
+              </span>
+              <ChevronRight size={10} className="text-zinc-600" />
+            </button>
+            <div className="my-1 border-t border-brand-panel/60" />
+            <button
+              onMouseDown={(e) => { e.stopPropagation(); onClose(); dismissCtxMenu() }}
+              className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors"
+            >
+              <span className="w-3.5 h-3.5 flex-shrink-0 flex items-center justify-center"><X size={12} /></span>
               Close Tab
             </button>
+            <button
+              onMouseDown={(e) => { e.stopPropagation(); removeLayoutLeaf(tabId, leafId); dismissCtxMenu() }}
+              className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-red-400 hover:bg-brand-panel hover:text-red-300 transition-colors"
+            >
+              <span className="w-3.5 h-3.5 flex-shrink-0 flex items-center justify-center"><X size={12} /></span>
+              Close Pane
+            </button>
           </div>
+          {showMoveSubmenu && (
+            <WindowMoveSubmenu
+              style={{ left: getSubmenuX(), top: submenuY }}
+              windows={otherWindows}
+              onSelect={(wId) => { void moveToWindow(sessionId, wId); dismissCtxMenu(); setShowMoveSubmenu(false) }}
+              onMouseEnter={clearHide}
+              onMouseLeave={scheduleHide}
+              onNewWindow={isMainWindow && windowId ? () => {
+                detachPane(tabId, sessionId)
+                void detachTab(sessionId, windowId)
+                dismissCtxMenu()
+                setShowMoveSubmenu(false)
+              } : undefined}
+            />
+          )}
         </>,
         document.body
       )}

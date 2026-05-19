@@ -45,6 +45,7 @@ export function useLayoutPersistence(): void {
           conversationId: m.conversationId,
           groupId: m.groupId,
           yoloMode: m.yoloMode,
+          workspaceId: m.workspaceId,
         })),
         tabs: [
           ...state.tabOrder

@@ -439,7 +439,13 @@ export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', neve
       }
       const targetTree = state.paneTree[targetTabId]
       if (targetTree) {
-        state.paneTree[targetTabId] = insertNode(targetTree, targetLeafId, direction, newLeaf, side)
+        // If the entire target tree is a home leaf, replace it rather than splitting alongside it.
+        // Dragging a session onto a home pane always means "show this session here".
+        if (targetTree.type === 'leaf' && targetTree.panel === 'home') {
+          state.paneTree[targetTabId] = newLeaf
+        } else {
+          state.paneTree[targetTabId] = insertNode(targetTree, targetLeafId, direction, newLeaf, side)
+        }
       }
       state.activeSessionId = targetTabId
       state.focusedSessionId = sessionId
@@ -786,12 +792,19 @@ export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', neve
       const tab = srcLeaf.tabs[tabIndex]
       if (!tab) return
       if (srcLeafId === dstLeafId && !edge) return
+      // Lone tab dragged to edge of its own leaf — splitting would just move it back to the same spot
+      if (srcLeafId === dstLeafId && edge && srcLeaf.tabs.length === 1) return
 
       // Step 1: Remove tab from source
       const newSrcTabs = srcLeaf.tabs.filter((_, i) => i !== tabIndex)
       if (newSrcTabs.length === 0) {
         if (srcLeaf.isMain) {
-          state.paneTree[srcTabId] = replaceNode(srcTree, srcLeafId, makeHomeLeaf())
+          const collapsed = removeNode(srcTree, srcLeafId)
+          if (!collapsed) {
+            state.paneTree[srcTabId] = makeHomeLeaf() as LayoutNode
+          } else {
+            state.paneTree[srcTabId] = collapsed
+          }
         } else {
           const collapsed = removeNode(srcTree, srcLeafId)
           if (collapsed) { state.paneTree[srcTabId] = collapsed }

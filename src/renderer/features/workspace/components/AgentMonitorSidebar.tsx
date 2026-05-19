@@ -180,7 +180,7 @@ export function AgentMonitorSidebar({ activeWorkspaceId, onWorkspaceChange, acti
         useStore.getState().setActiveSession(tabId)
       }
     }
-  }, [projectSessions.length, activeSessionId, isRootWorkspace, onSelectSession])
+  }, [projectSessions.length, activeSessionId, onSelectSession])
 
 
   const handleDrop = useCallback(async (targetGroupId: string | null) => {

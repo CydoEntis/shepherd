@@ -51,7 +51,7 @@ export function useLayoutRestore(): void {
     for (const ps of layout.sessions) {
       try {
         // Restore as plain shells — don't auto-relaunch agent commands on restart.
-        const meta = await createSession({ name: ps.name, cwd: ps.cwd || undefined, cols: DEFAULT_COLS, rows: DEFAULT_ROWS, color: ps.color, groupId: ps.groupId, noSandbox: true })
+        const meta = await createSession({ name: ps.name, cwd: ps.cwd || undefined, cols: DEFAULT_COLS, rows: DEFAULT_ROWS, color: ps.color, groupId: ps.groupId, workspaceId: ps.workspaceId, noSandbox: true })
         upsertSession(meta)
         idMap.set(ps.sessionId, meta.sessionId)
         createdMetas.push(meta)
