@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.6.1 — Stability & Window Management
+
+### Fixes
+
+- **Per-workspace file views** — Opening files in one workspace no longer bleeds into other workspaces. Each workspace maintains its own independent file layout.
+- **New terminal opens in current pane** — The "+ New Terminal" button in any pane's tab bar now adds the terminal as a tab inside that pane, instead of spawning a separate top-level session tab.
+- **Terminal close behavior** — Closing a terminal removes it from the layout without killing the underlying PTY process. Sessions remain alive in the background and can be reopened.
+- **Unified terminal context menu** — Terminals no longer show two different right-click menus depending on where you click. Both the tab right-click and the in-terminal right-click now show a consistent "Kill Session" action and "Move to" submenu.
+- **Removed "Close Pane" from terminal menu** — The broken "Close Pane" option that was closing files instead of the terminal has been removed.
+- **Move file back to main window** — Files moved to a secondary window can now be moved back to the main window via the context menu.
+- **Secondary window auto-closes** — When the last item (file or terminal) is moved out of a secondary window, that window closes automatically.
+- **Editor window gradient** — Secondary file windows now correctly receive their window identity on startup, restoring the title bar gradient.
+
+---
+
 ## v0.6.0 — Editor Experience
 
 ### New Features

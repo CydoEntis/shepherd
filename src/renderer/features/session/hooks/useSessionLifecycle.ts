@@ -21,6 +21,7 @@ export function useSessionLifecycle(): void {
   const setWindowMeta = useStore((s) => s.setWindowMeta)
   const setWindowHighlighted = useStore((s) => s.setWindowHighlighted)
   const setTotalWindowCount = useStore((s) => s.setTotalWindowCount)
+  const openFileInLayout = useStore((s) => s.openFileInLayout)
   const isMainRef = useRef<boolean | null>(null)
   // Tracks running sessions found at startup — 'pending' until listSessions resolves
   const liveSessionsRef = useRef<SessionMeta[] | 'pending'>('pending')
@@ -190,6 +191,11 @@ export function useSessionLifecycle(): void {
       void loadSettings()
     })
 
+    const offFileOpenRequested = ipc.on(IPC.FS_FILE_OPEN_REQUESTED, (payload) => {
+      const { filePath } = payload as { filePath: string }
+      if (filePath) openFileInLayout(normalizePath(filePath))
+    })
+
     const offOpenPath = ipc.on(IPC.OPEN_PATH, (payload) => {
       const { path: folderPath } = payload as { path: string }
       createSession({
@@ -239,6 +245,7 @@ export function useSessionLifecycle(): void {
       offWindowCount()
       offMetaUpdated()
       offSettingsUpdated()
+      offFileOpenRequested()
       offOpenPath()
       document.removeEventListener('acc:new-terminal-in-pane', handleNewTerminalInPane)
     }

@@ -28,6 +28,7 @@ export function PaneTabBar({ tabs, activeIndex, tabId, leafId, onNewTerminal, on
   const setEditorGroupActive = useStore((s) => s.setEditorGroupActive)
   const removeFileFromEditorGroup = useStore((s) => s.removeFileFromEditorGroup)
   const removeLayoutLeaf = useStore((s) => s.removeLayoutLeaf)
+  const closePane = useStore((s) => s.closePane)
   const reorderTabInEditorGroup = useStore((s) => s.reorderTabInEditorGroup)
   const moveEditorTab = useStore((s) => s.moveEditorTab)
   const sessions = useStore((s) => s.sessions)
@@ -56,8 +57,14 @@ export function PaneTabBar({ tabs, activeIndex, tabId, leafId, onNewTerminal, on
 
   const handleCloseTab = (e: React.MouseEvent, index: number): void => {
     e.stopPropagation()
-    if (tabs.length <= 1) removeLayoutLeaf(tabId, leafId)
-    else removeFileFromEditorGroup(tabId, leafId, index)
+    const tab = tabs[index]
+    if (tab.kind === 'terminal') {
+      if (tabs.length <= 1) closePane(tabId, tab.sessionId)
+      else removeFileFromEditorGroup(tabId, leafId, index)
+    } else {
+      if (tabs.length <= 1) removeLayoutLeaf(tabId, leafId)
+      else removeFileFromEditorGroup(tabId, leafId, index)
+    }
   }
 
   return (

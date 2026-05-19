@@ -134,14 +134,14 @@ export function SessionCtxMenu({ ctxMenu, onDismiss, onRename, onSplitHere, onDe
         </button>
       </div>
 
-      {showMoveSubmenu && (isMainWindow || otherWindows.length > 0) && (
+      {showMoveSubmenu && (
         <WindowMoveSubmenu
           style={{ left: getSubmenuX(), top: submenuY }}
           windows={otherWindows}
           onSelect={(windowId) => { onMoveToWindow(meta.sessionId, windowId); onDismiss() }}
           onMouseEnter={clearHideTimeout}
           onMouseLeave={scheduleHideSubmenu}
-          onNewWindow={isMainWindow ? () => { onDetach(meta.sessionId); onDismiss() } : undefined}
+          onNewWindow={() => { onDetach(meta.sessionId); onDismiss() }}
         />
       )}
     </>,

@@ -7,12 +7,15 @@ import { TitleBar } from '../../../components/TitleBar'
 import { ipc } from '../../../lib/ipc'
 import { IPC } from '@shared/ipc-channels'
 import { normalizePath } from '../../../lib/utils'
+import type { WindowInitialSessionsPayload } from '@shared/ipc-types'
 
 export function EditorWindow(): JSX.Element {
   const [filePath, setFilePath] = useState<string | null>(null)
   const appTheme = useStore((s) => s.settings.theme)
   const loadSettings = useStore((s) => s.loadSettings)
   const openFileTab = useStore((s) => s.openFileTab)
+  const setWindowId = useStore((s) => s.setWindowId)
+  const setWindowMeta = useStore((s) => s.setWindowMeta)
 
   useTheme(appTheme)
 
@@ -23,6 +26,11 @@ export function EditorWindow(): JSX.Element {
         setFilePath(files[0])
         openFileTab(files[0])
       }
+    })
+    return ipc.on(IPC.WINDOW_INITIAL_SESSIONS, (payload) => {
+      const { windowId, windowName, windowColor } = payload as WindowInitialSessionsPayload
+      if (windowId) setWindowId(windowId)
+      if (windowName && windowColor) setWindowMeta(windowName, windowColor)
     })
   }, [])
 

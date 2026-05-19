@@ -65,6 +65,7 @@ export interface SessionSlice {
   insertSessionAtRight: (targetTabId: string, sessionId: string) => void
   switchPaneSession: (tabId: string, toSessionId: string) => void
   resetRootPane: () => void
+  swapRootPane: (tree: LayoutNode) => void
   resetAllSessions: () => void
 
   addFileToEditorGroup: (tabId: string, leafId: string, filePath: string) => void
@@ -509,6 +510,11 @@ export const createSessionSlice: StateCreator<RootStore, [['zustand/immer', neve
   resetRootPane: () =>
     set((state) => {
       state.paneTree['__root__'] = makeHomeLeaf() as LayoutNode
+    }),
+
+  swapRootPane: (tree) =>
+    set((state) => {
+      state.paneTree['__root__'] = tree
     }),
 
   resetAllSessions: () =>

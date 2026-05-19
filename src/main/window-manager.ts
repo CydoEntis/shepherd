@@ -279,8 +279,9 @@ export function moveTabToWindow(sessionId: string, fromWindowId: string, targetW
   targetWin.webContents.send(IPC.WINDOW_ADD_SESSION, { sessionId, meta: entry?.meta })
 
   const fromSessions = windowSessions.get(fromWindowId)
+  const fromFiles = windowFiles.get(fromWindowId)
   if (fromWin) {
-    if (fromWindowId !== mainWindowId && (fromSessions?.size ?? 0) === 0) {
+    if (fromWindowId !== mainWindowId && (fromSessions?.size ?? 0) === 0 && (fromFiles?.size ?? 0) === 0) {
       fromWin.close()
     } else {
       fromWin.webContents.send(IPC.WINDOW_SESSION_REMOVED, { sessionId })
@@ -374,6 +375,16 @@ export function moveFileToWindow(filePath: string, fromWindowId: string, targetW
   if (targetWindowId !== mainWindowId) {
     if (!windowFiles.has(targetWindowId)) windowFiles.set(targetWindowId, new Map())
     windowFiles.get(targetWindowId)!.set(filePath, workspaceId)
+  }
+  // Remove the file from the source window and close it if now empty.
+  windowFiles.get(fromWindowId)?.delete(filePath)
+  const fromWin = windows.get(fromWindowId)
+  if (fromWin && fromWindowId !== mainWindowId) {
+    const fromSessions = windowSessions.get(fromWindowId)
+    const fromFiles = windowFiles.get(fromWindowId)
+    if ((fromSessions?.size ?? 0) === 0 && (fromFiles?.size ?? 0) === 0) {
+      fromWin.close()
+    }
   }
 }
 

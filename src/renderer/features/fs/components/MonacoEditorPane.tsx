@@ -4,7 +4,7 @@ import Editor from '@monaco-editor/react'
 import type { OnMount, BeforeMount } from '@monaco-editor/react'
 import { Save, ChevronRight, ArrowRightLeft } from 'lucide-react'
 import { readFile, writeFile, showInFolder, openInEditor, moveFileToWindow } from '../fs.service'
-import { makeMarkdownPreviewLeaf } from '../../layout/layout-tree'
+import { makeMarkdownPreviewLeaf, makeTerminalLeaf, findLeafById } from '../../layout/layout-tree'
 import { useInstalledEditors } from '../hooks/useInstalledEditors'
 import { listWindows } from '../../window/window.service'
 import { WindowMoveSubmenu } from '../../window/components/WindowMoveSubmenu'
@@ -264,6 +264,8 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
   const moveTriggerRef = useRef<HTMLButtonElement>(null)
   const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const removeLayoutLeaf = useStore((s) => s.removeLayoutLeaf)
+  const replaceLayoutLeaf = useStore((s) => s.replaceLayoutLeaf)
+  const removeFileFromEditorGroup = useStore((s) => s.removeFileFromEditorGroup)
   const closeFileTab = useStore((s) => s.closeFileTab)
   const updateSettings = useStore((s) => s.updateSettings)
   const insertLayoutAtRight = useStore((s) => s.insertLayoutAtRight)
@@ -294,13 +296,32 @@ export function MonacoEditorPane({ filePath, tabId, leafId }: Props): JSX.Elemen
     setCtxMenu(null)
     setShowMoveSubmenu(false)
     try { await moveFileToWindow(currentPath, targetWindowId) } catch {}
-    // Close the whole file tab if this pane IS the top-level file tab; otherwise just remove the leaf.
     const state = useStore.getState()
     if (state.fileTabs[tabId]) {
+      // Top-level file tab — close the whole tab entry.
       state.closeFileTab(tabId)
-    } else {
-      removeLayoutLeaf(tabId, leafId)
+      return
     }
+    // File is inside a session's pane tree. Remove only this file tab from the leaf.
+    const tree = state.paneTree[tabId]
+    const leaf = tree ? findLeafById(tree, leafId) : null
+    if (leaf && leaf.panel === 'editor-group') {
+      const norm = (p: string): string => p.replace(/\\/g, '/')
+      const idx = leaf.tabs.findIndex((t) => t.kind === 'file' && norm(t.path) === norm(currentPath))
+      if (idx !== -1) {
+        if (leaf.tabs.length > 1) {
+          // Other tabs remain — remove just this one.
+          removeFileFromEditorGroup(tabId, leafId, idx)
+        } else if (state.sessions[tabId]) {
+          // Last tab in the leaf and it's a session — restore a bare terminal so the pane doesn't go blank.
+          replaceLayoutLeaf(tabId, leafId, makeTerminalLeaf(tabId))
+        } else {
+          removeLayoutLeaf(tabId, leafId)
+        }
+        return
+      }
+    }
+    removeLayoutLeaf(tabId, leafId)
   }
 
   const theme = useStore((s) => s.settings.theme)

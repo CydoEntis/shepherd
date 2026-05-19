@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { X, LayoutPanelLeft, SplitSquareHorizontal, Trash2, FileText, GitBranch, Keyboard, GripHorizontal, Shield, AppWindow, MousePointer2, Palette, RefreshCw } from 'lucide-react'
+import { X, LayoutPanelLeft, SplitSquareHorizontal, Trash2, AppWindow, MousePointer2, RefreshCw } from 'lucide-react'
 
 declare const __APP_VERSION__: string
 
@@ -18,82 +18,40 @@ interface ChangeEntry {
 
 const CHANGES: ChangeEntry[] = [
   {
-    icon: <RefreshCw size={15} />,
-    title: 'Linux update and icon fixes',
-    description:
-      'Fixed "not responding" hang when installing updates on Linux — terminal sessions and windows are now forcibly closed before the installer runs. Improved dock icon registration for Linux desktop environments.',
-  },
-  {
-    icon: <RefreshCw size={15} />,
-    title: 'Reliable auto-update and restart',
-    description:
-      'The updater now restarts the app correctly after installing. Updates that finish downloading before the app fully loads are no longer silently lost.',
-  },
-  {
-    icon: <Shield size={15} />,
-    title: 'Sandbox mode for Yolo sessions',
-    description:
-      'Yolo-mode sessions now run inside a Docker container via sbx, isolating file system and shell access from your host machine. Requires Docker and sbx installed.',
-  },
-  {
-    icon: <AppWindow size={15} />,
-    title: 'Window identity in status bar',
-    description:
-      'When multiple windows are open, your window name now appears centered in the status bar. Click it to rename or recolor the window.',
-  },
-  {
-    icon: <Palette size={15} />,
-    title: 'Two new themes',
-    description:
-      'Mars brings a dark rust and orange-red palette. Pulsar brings near-black navy with electric cyan accents. Both themes include matching terminal colors.',
-  },
-  {
-    icon: <MousePointer2 size={15} />,
-    title: 'Context menu polish',
-    description:
-      'Notes context menus now have icons matching the session menus. The "Move to Window" submenu shows colored squares for each window in all context menus.',
-  },
-  {
     icon: <LayoutPanelLeft size={15} />,
-    title: 'New layout engine',
+    title: 'Per-workspace file views',
     description:
-      'Sessions now live in a flexible split-pane layout. Clicking a session in the sidebar opens it to the right of your active pane instead of replacing it.',
+      'Files opened in one workspace no longer appear in other workspaces. Each workspace maintains its own independent file layout — switching workspaces now shows the right files every time.',
   },
   {
     icon: <SplitSquareHorizontal size={15} />,
-    title: 'Close pane ≠ kill session',
+    title: 'New terminal opens in current pane',
     description:
-      'Closing a pane only removes it from the layout — the session keeps running. To end a session, use Kill Session from the right-click menu.',
-  },
-  {
-    icon: <FileText size={15} />,
-    title: 'Markdown preview pane',
-    description:
-      'Open any markdown file in a split preview pane. You can also detach the preview to its own window.',
-  },
-  {
-    icon: <GitBranch size={15} />,
-    title: 'Workspace restore',
-    description:
-      'Restoring a workspace now only brings back panes that belong to that workspace — panes from other workspaces are no longer mixed in.',
-  },
-  {
-    icon: <Keyboard size={15} />,
-    title: 'Keybind changes — action required',
-    description:
-      'All shortcuts moved to Ctrl+Shift+* to avoid terminal conflicts. If your shortcuts feel broken, reset them in Settings → Hotkeys.',
-  },
-  {
-    icon: <GripHorizontal size={15} />,
-    title: 'Drag-and-drop layout',
-    description:
-      'Drag any pane to reorder the layout, or drag a session or note from the sidebar directly into a split. Drop zones appear on the edges of each pane.',
+      'Clicking "+ New Terminal" from any pane now adds the terminal as a tab inside that pane instead of opening a separate top-level session tab.',
   },
   {
     icon: <Trash2 size={15} />,
-    title: 'Notes stay open',
+    title: 'Terminal close without kill',
     description:
-      'Clicking outside the notes panel no longer closes it. Press Ctrl+Shift+N while notes are open to create a new note instead.',
+      'Closing a terminal removes it from the layout but leaves the underlying process running. Use "Kill Session" from the right-click menu to terminate it.',
+  },
+  {
+    icon: <MousePointer2 size={15} />,
+    title: 'Unified terminal context menu',
+    description:
+      'Terminals no longer show two different menus depending on where you right-click. Both the tab and the terminal content area now show a single consistent menu with "Kill Session" and "Move to".',
+  },
+  {
+    icon: <AppWindow size={15} />,
+    title: 'Window management fixes',
+    description:
+      'Files moved to a secondary window can now be moved back to the main window. Secondary windows close automatically when the last item is moved out.',
+  },
+  {
+    icon: <RefreshCw size={15} />,
+    title: 'Editor window gradient restored',
+    description:
+      'Secondary file windows now correctly receive their window identity on startup, restoring the title bar color gradient.',
   },
 ]
 

@@ -144,11 +144,7 @@ export function TabContextMenu({ x, y, tab, tabIndex, totalTabs, tabId, leafId, 
             <Item
               label="Kill Session"
               icon={<Trash2 size={12} />}
-              danger
-              onClick={() => act(() => {
-                killSession(tab.sessionId).catch(() => {})
-                closePane(tabId, tab.sessionId)
-              })}
+              onClick={() => act(() => closePane(tabId, tab.sessionId))}
             />
           </>
         )}

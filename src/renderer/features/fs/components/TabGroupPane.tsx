@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Search, ChevronUp, ChevronDown, ArrowRightLeft, ChevronRight } from 'lucide-react'
+import { X, Search, ChevronUp, ChevronDown, ArrowRightLeft, ChevronRight, Trash2 } from 'lucide-react'
 import { MonacoEditorPane } from './MonacoEditorPane'
 import { useTerminal } from '../../terminal/hooks/useTerminal'
 import { TerminalBreadcrumbs } from '../../terminal/components/TerminalBreadcrumbs'
@@ -44,7 +44,6 @@ function TerminalTabSlot({ sessionId, isActive, tabId, leafId, onClose }: Termin
 
   const windowId = useStore((s) => s.windowId)
   const isMainWindow = useStore((s) => s.isMainWindow)
-  const removeLayoutLeaf = useStore((s) => s.removeLayoutLeaf)
   const detachPane = useStore((s) => s.detachPane)
 
   useEffect(() => {
@@ -197,17 +196,10 @@ function TerminalTabSlot({ sessionId, isActive, tabId, leafId, onClose }: Termin
             <div className="my-1 border-t border-brand-panel/60" />
             <button
               onMouseDown={(e) => { e.stopPropagation(); onClose(); dismissCtxMenu() }}
-              className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-zinc-300 hover:bg-brand-panel hover:text-zinc-100 transition-colors"
-            >
-              <span className="w-3.5 h-3.5 flex-shrink-0 flex items-center justify-center"><X size={12} /></span>
-              Close Tab
-            </button>
-            <button
-              onMouseDown={(e) => { e.stopPropagation(); removeLayoutLeaf(tabId, leafId); dismissCtxMenu() }}
               className="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-red-400 hover:bg-brand-panel hover:text-red-300 transition-colors"
             >
-              <span className="w-3.5 h-3.5 flex-shrink-0 flex items-center justify-center"><X size={12} /></span>
-              Close Pane
+              <span className="w-3.5 h-3.5 flex-shrink-0 flex items-center justify-center"><Trash2 size={12} /></span>
+              Kill Session
             </button>
           </div>
           {showMoveSubmenu && (
@@ -217,7 +209,7 @@ function TerminalTabSlot({ sessionId, isActive, tabId, leafId, onClose }: Termin
               onSelect={(wId) => { void moveToWindow(sessionId, wId); dismissCtxMenu(); setShowMoveSubmenu(false) }}
               onMouseEnter={clearHide}
               onMouseLeave={scheduleHide}
-              onNewWindow={isMainWindow && windowId ? () => {
+              onNewWindow={windowId ? () => {
                 detachPane(tabId, sessionId)
                 void detachTab(sessionId, windowId)
                 dismissCtxMenu()
@@ -235,17 +227,24 @@ function TerminalTabSlot({ sessionId, isActive, tabId, leafId, onClose }: Termin
 export function TabGroupPane({ tabs, activeIndex, tabId, leafId }: TabGroupPaneProps): JSX.Element {
   const removeFileFromEditorGroup = useStore((s) => s.removeFileFromEditorGroup)
   const removeLayoutLeaf = useStore((s) => s.removeLayoutLeaf)
+  const closePane = useStore((s) => s.closePane)
 
   const safeIndex = Math.min(activeIndex, tabs.length - 1)
   const activeTab = tabs[safeIndex]
 
   const handleCloseTabAtIndex = (index: number): void => {
-    if (tabs.length <= 1) removeLayoutLeaf(tabId, leafId)
-    else removeFileFromEditorGroup(tabId, leafId, index)
+    const tab = tabs[index]
+    if (tab.kind === 'terminal') {
+      if (tabs.length <= 1) closePane(tabId, tab.sessionId)
+      else removeFileFromEditorGroup(tabId, leafId, index)
+    } else {
+      if (tabs.length <= 1) removeLayoutLeaf(tabId, leafId)
+      else removeFileFromEditorGroup(tabId, leafId, index)
+    }
   }
 
   const handleNewTerminal = (): void => {
-    document.dispatchEvent(new CustomEvent('acc:new-terminal-in-pane', { detail: { tabId, leafId } }))
+    document.dispatchEvent(new CustomEvent('acc:new-session', { detail: { targetTabId: tabId } }))
   }
 
   const handleNewFile = (): void => {

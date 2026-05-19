@@ -172,10 +172,13 @@ export function App(): JSX.Element {
   const workspaces = useStore((s) => s.workspaces)
   const setActiveWorkspaceId = useStore((s) => s.setActiveWorkspaceId)
   const resetRootPane = useStore((s) => s.resetRootPane)
+  const swapRootPane = useStore((s) => s.swapRootPane)
   const workspaceProject = workspaces.find((w) => w.id === activeWorkspaceId)?.rootPath || null
 
   // Remembers the last active session tab for each workspace so switching back restores it.
   const workspaceSessionMapRef = useRef<Record<string, string>>({})
+  // Remembers the __root__ pane tree for each workspace independently.
+  const workspaceRootTreeMapRef = useRef<Record<string, import('./features/layout/layout-tree').LayoutNode>>({})
   const workspaceSessionIdRef = useRef(workspaceSessionId)
   const activeWorkspaceIdRef = useRef(activeWorkspaceId)
   // Direct render-time assignment — always current, even during concurrent renders
@@ -246,31 +249,34 @@ export function App(): JSX.Element {
   }, [workspaces, setActiveWorkspaceId])
 
   const handleWorkspaceChange = useCallback((id: string) => {
-    // Save the session we're leaving (including __root__) so switching back restores it.
+    const leavingWorkspace = activeWorkspaceIdRef.current
     const leavingSession = workspaceSessionIdRef.current
-    if (leavingSession) {
-      workspaceSessionMapRef.current[activeWorkspaceIdRef.current] = leavingSession
-    }
+
+    // Save session and __root__ tree for the workspace we're leaving.
+    if (leavingSession) workspaceSessionMapRef.current[leavingWorkspace] = leavingSession
+    workspaceRootTreeMapRef.current[leavingWorkspace] = useStore.getState().paneTree['__root__']
 
     setActiveWorkspaceId(id)
+
+    // Restore the __root__ tree saved for this workspace, or start fresh.
+    const savedRootTree = workspaceRootTreeMapRef.current[id]
+    if (savedRootTree) {
+      swapRootPane(savedRootTree)
+    } else {
+      resetRootPane()
+    }
 
     // Restore the last session for the destination workspace if it still exists.
     const saved = workspaceSessionMapRef.current[id]
     if (saved && saved !== '__root__' && useStore.getState().paneTree[saved]) {
-      // Real terminal session with an existing pane tree
       setWorkspaceSessionId(saved)
       useStore.getState().setActiveSession(saved)
-    } else if (saved === '__root__') {
-      // Returning to a workspace that was last showing __root__ — preserve its files
-      setWorkspaceSessionId('__root__')
     } else {
-      // First visit to this workspace — show a clean home view
       setWorkspaceSessionId('__root__')
-      resetRootPane()
     }
 
     void setUiState({ activeWorkspaceId: id })
-  }, [setActiveWorkspaceId, resetRootPane])
+  }, [setActiveWorkspaceId, resetRootPane, swapRootPane])
 
   useEffect(() => {
     document.documentElement.style.fontSize = `${uiFontSize}px`
